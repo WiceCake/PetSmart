@@ -1,0 +1,18 @@
+{
+  "settings": "Mga Setting",
+  "account_information": "Impormasyon ng Account",
+  "address_book": "Aklat ng Address",
+  "country": "Bansa",
+  "language": "Wika",
+  "account_security": "Seguridad ng Account",
+  "policies": "Mga Patakaran",
+  "help": "Tulong",
+  "feedback": "Feedback",
+  "log_out": "MAG-LOG OUT",
+  "select_language": "Pumili ng Wika",
+  "apply": "Ilapat",
+  "english": "Ingles",
+  "filipino": "Filipino",
+  "change_language_notice": "Ang pagpapalit ng wika ay magre-restart ng app upang mailapat ang mga pagbabago.",
+  "language_changed": "Ang wika ay binago sa {lang}"
+} 

@@ -1,0 +1,18 @@
+{
+  "settings": "Settings",
+  "account_information": "Account Information",
+  "address_book": "Address Book",
+  "country": "Country",
+  "language": "Language",
+  "account_security": "Account Security",
+  "policies": "Policies",
+  "help": "Help",
+  "feedback": "Feedback",
+  "log_out": "LOG OUT",
+  "select_language": "Select Language",
+  "apply": "Apply",
+  "english": "English",
+  "filipino": "Filipino",
+  "change_language_notice": "Changing the language will restart the app to apply the changes.",
+  "language_changed": "Language changed to {lang}"
+} 
