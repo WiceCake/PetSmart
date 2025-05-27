@@ -5,21 +5,25 @@ class PoliciesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const mainBlue = Color(0xFF3B4CCA);
+    const primaryBlue = Color(0xFF233A63);
+    const backgroundColor = Color(0xFFF8F9FA);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7FB),
+      backgroundColor: backgroundColor,
       appBar: AppBar(
         title: const Text(
           'Policies',
           style: TextStyle(
-            color: mainBlue,
-            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
         ),
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.grey.withValues(alpha: 0.1),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: mainBlue),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -37,11 +41,11 @@ class PoliciesPage extends StatelessWidget {
                 context,
                 title: 'Terms of Service',
                 content: _termsOfServiceContent,
-                mainBlue: mainBlue,
+                primaryBlue: primaryBlue,
               ),
-              mainBlue: mainBlue,
+              primaryBlue: primaryBlue,
             ),
-            
+
             _buildPolicyCard(
               context,
               title: 'Privacy Policy',
@@ -51,11 +55,11 @@ class PoliciesPage extends StatelessWidget {
                 context,
                 title: 'Privacy Policy',
                 content: _privacyPolicyContent,
-                mainBlue: mainBlue,
+                primaryBlue: primaryBlue,
               ),
-              mainBlue: mainBlue,
+              primaryBlue: primaryBlue,
             ),
-            
+
             _buildPolicyCard(
               context,
               title: 'Cookie Policy',
@@ -65,11 +69,11 @@ class PoliciesPage extends StatelessWidget {
                 context,
                 title: 'Cookie Policy',
                 content: _cookiePolicyContent,
-                mainBlue: mainBlue,
+                primaryBlue: primaryBlue,
               ),
-              mainBlue: mainBlue,
+              primaryBlue: primaryBlue,
             ),
-            
+
             _buildPolicyCard(
               context,
               title: 'Community Guidelines',
@@ -79,11 +83,11 @@ class PoliciesPage extends StatelessWidget {
                 context,
                 title: 'Community Guidelines',
                 content: _communityGuidelinesContent,
-                mainBlue: mainBlue,
+                primaryBlue: primaryBlue,
               ),
-              mainBlue: mainBlue,
+              primaryBlue: primaryBlue,
             ),
-            
+
             _buildPolicyCard(
               context,
               title: 'Refund Policy',
@@ -93,11 +97,11 @@ class PoliciesPage extends StatelessWidget {
                 context,
                 title: 'Refund Policy',
                 content: _refundPolicyContent,
-                mainBlue: mainBlue,
+                primaryBlue: primaryBlue,
               ),
-              mainBlue: mainBlue,
+              primaryBlue: primaryBlue,
             ),
-            
+
             _buildPolicyCard(
               context,
               title: 'Shipping Policy',
@@ -107,11 +111,11 @@ class PoliciesPage extends StatelessWidget {
                 context,
                 title: 'Shipping Policy',
                 content: _shippingPolicyContent,
-                mainBlue: mainBlue,
+                primaryBlue: primaryBlue,
               ),
-              mainBlue: mainBlue,
+              primaryBlue: primaryBlue,
             ),
-            
+
             const SizedBox(height: 16),
             Center(
               child: Text(
@@ -135,7 +139,7 @@ class PoliciesPage extends StatelessWidget {
     required String description,
     required IconData icon,
     required VoidCallback onTap,
-    required Color mainBlue,
+    required Color primaryBlue,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -153,10 +157,10 @@ class PoliciesPage extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         leading: CircleAvatar(
-          backgroundColor: const Color(0xFFE8EAF6),
+          backgroundColor: primaryBlue.withValues(alpha: 0.1),
           child: Icon(
             icon,
-            color: mainBlue,
+            color: primaryBlue,
             size: 20,
           ),
         ),
@@ -178,7 +182,7 @@ class PoliciesPage extends StatelessWidget {
     BuildContext context, {
     required String title,
     required List<Map<String, dynamic>> content,
-    required Color mainBlue,
+    required Color primaryBlue,
   }) {
     Navigator.push(
       context,
@@ -186,7 +190,7 @@ class PoliciesPage extends StatelessWidget {
         builder: (context) => _PolicyDetailPage(
           title: title,
           content: content,
-          mainBlue: mainBlue,
+          primaryBlue: primaryBlue,
         ),
       ),
     );
@@ -315,12 +319,12 @@ class PoliciesPage extends StatelessWidget {
 class _PolicyDetailPage extends StatelessWidget {
   final String title;
   final List<Map<String, dynamic>> content;
-  final Color mainBlue;
+  final Color primaryBlue;
 
   const _PolicyDetailPage({
     required this.title,
     required this.content,
-    required this.mainBlue,
+    required this.primaryBlue,
   });
 
   @override
@@ -330,15 +334,17 @@ class _PolicyDetailPage extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           title,
-          style: TextStyle(
-            color: mainBlue,
-            fontWeight: FontWeight.bold,
+          style: const TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
         ),
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.grey.withValues(alpha: 0.1),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: mainBlue),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -352,7 +358,7 @@ class _PolicyDetailPage extends StatelessWidget {
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: mainBlue,
+                color: primaryBlue,
               ),
             ),
             const SizedBox(height: 16),

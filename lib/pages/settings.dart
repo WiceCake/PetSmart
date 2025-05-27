@@ -7,63 +7,99 @@ import 'package:pet_smart/pages/setting/language.dart';
 import 'package:pet_smart/pages/setting/policies.dart';
 import 'package:pet_smart/pages/setting/help.dart';
 import 'package:pet_smart/pages/setting/feedback.dart';
-import 'package:pet_smart/pages/supabase_test_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Add these color constants at the top of the file
-const Color primaryRed = Color(0xFFE57373);    // Light coral red
-const Color primaryBlue = Color(0xFF3F51B5);   // PetSmart blue
-const Color accentRed = Color(0xFFEF5350);     // Brighter red for emphasis
-const Color backgroundColor = Color(0xFFF6F7FB); // Light background
+// Color constants
+const Color primaryRed = Color(0xFFE57373);
+const Color primaryBlue = Color(0xFF233A63);   // PetSmart brand blue
+const Color accentRed = Color(0xFFEF5350);
+const Color backgroundColor = Color(0xFFF8F9FA);
+const Color cardColor = Colors.white;
 
 class SettingScreen extends StatelessWidget {
   const SettingScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    const Color cardColor = Colors.white; // Changed to white for better contrast
-
     Widget settingCard({
       required Widget child,
       VoidCallback? onTap,
       IconData? icon,
       Color? iconColor,
+      bool isDestructive = false,
     }) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6.0),
+        padding: const EdgeInsets.symmetric(vertical: 4.0),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             onTap: onTap,
-            splashColor: Theme.of(context).primaryColor.withOpacity(0.08),
+            splashColor: isDestructive
+                ? Colors.red.withOpacity(0.1)
+                : primaryBlue.withOpacity(0.08),
             highlightColor: Colors.transparent,
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
               decoration: BoxDecoration(
                 color: cardColor,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey.withOpacity(0.1),
+                  width: 1,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+                    color: Colors.black.withOpacity(0.02),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
                 ],
               ),
               child: Row(
                 children: [
                   if (icon != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 14),
-                      child: Icon(icon, color: iconColor ?? primaryBlue, size: 26), // Changed default icon color
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isDestructive
+                            ? Colors.red.withOpacity(0.1)
+                            : primaryBlue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        icon,
+                        color: isDestructive ? Colors.red[600] : primaryBlue,
+                        size: 20,
+                      ),
                     ),
+                  const SizedBox(width: 12),
                   Expanded(child: child),
                   if (onTap != null)
-                    const Icon(Icons.arrow_forward_ios, size: 18, color: Colors.black26),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: Colors.grey[400],
+                    ),
                 ],
               ),
             ),
+          ),
+        ),
+      );
+    }
+
+    Widget sectionHeader(String title) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(4, 24, 4, 8),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[600],
+            letterSpacing: 0.5,
           ),
         ),
       );
@@ -73,12 +109,14 @@ class SettingScreen extends StatelessWidget {
       backgroundColor: backgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.grey.withOpacity(0.1),
         title: const Text(
           'Settings',
           style: TextStyle(
             color: Colors.black87,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
         ),
         centerTitle: true,
@@ -86,16 +124,21 @@ class SettingScreen extends StatelessWidget {
       ),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0), // Adjusted padding
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Removed custom title text as it's now in AppBar
+              // Account Section
+              sectionHeader('ACCOUNT'),
               settingCard(
                 icon: Icons.person_outline,
                 child: const Text(
                   'Account Information',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
                 ),
                 onTap: () {
                   Navigator.push(
@@ -108,7 +151,11 @@ class SettingScreen extends StatelessWidget {
                 icon: Icons.location_on_outlined,
                 child: const Text(
                   'Address Book',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
                 ),
                 onTap: () {
                   Navigator.push(
@@ -118,19 +165,61 @@ class SettingScreen extends StatelessWidget {
                 },
               ),
               settingCard(
+                icon: Icons.notifications_outlined,
+                child: const Text(
+                  'Notifications',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
+                ),
+                onTap: () {
+                  // TODO: Navigate to notifications settings
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Notifications settings coming soon')),
+                  );
+                },
+              ),
+              settingCard(
+                icon: Icons.privacy_tip_outlined,
+                child: const Text(
+                  'Privacy & Security',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
+                ),
+                onTap: () {
+                  // TODO: Navigate to privacy settings
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Privacy & Security settings coming soon')),
+                  );
+                },
+              ),
+
+              // Preferences Section
+              sectionHeader('PREFERENCES'),
+              settingCard(
                 icon: Icons.flag_outlined,
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
                       'Country',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 16,
+                        color: Colors.black87,
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'United States is your current country',
-                        style: const TextStyle(fontSize: 13, color: Colors.black54),
-                        overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 2),
+                    Text(
+                      'Philippines',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
                       ),
                     ),
                   ],
@@ -146,15 +235,22 @@ class SettingScreen extends StatelessWidget {
                 icon: Icons.language_outlined,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
+                  children: [
+                    const Text(
                       'Language',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 16,
+                        color: Colors.black87,
+                      ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'English',
-                      style: TextStyle(fontSize: 13, color: Colors.black54),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
                     ),
                   ],
                 ),
@@ -165,11 +261,18 @@ class SettingScreen extends StatelessWidget {
                   );
                 },
               ),
+
+              // Support Section
+              sectionHeader('SUPPORT'),
               settingCard(
                 icon: Icons.policy_outlined,
                 child: const Text(
                   'Policies',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
                 ),
                 onTap: () {
                   Navigator.push(
@@ -181,8 +284,12 @@ class SettingScreen extends StatelessWidget {
               settingCard(
                 icon: Icons.help_outline,
                 child: const Text(
-                  'Help',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  'Help & Support',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
                 ),
                 onTap: () {
                   Navigator.push(
@@ -195,7 +302,11 @@ class SettingScreen extends StatelessWidget {
                 icon: Icons.feedback_outlined,
                 child: const Text(
                   'Feedback',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
                 ),
                 onTap: () {
                   Navigator.push(
@@ -204,84 +315,101 @@ class SettingScreen extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE57373),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 2,
-                  ),
-                  icon: const Icon(Icons.logout),
-                  onPressed: () {
-                    // Show confirmation dialog
-                    showDialog(
-                      context: context,
-                      builder: (BuildContext context) {
-                        return AlertDialog(
-                          title: const Text('Log Out'),
-                          content: const Text('Are you sure you want to log out?'),
-                          actions: [
-                            TextButton(
-                              child: const Text('Cancel'),
-                              onPressed: () {
-                                Navigator.of(context).pop();
-                              },
-                            ),
-                            TextButton(
-                              child: const Text('Log Out'),
-                              onPressed: () {
-                                // Close dialog and navigate to auth screen
-                                Navigator.of(context).pop();
-                                // Navigate to AuthScreen
-                                Navigator.of(context).pushAndRemoveUntil(
-                                  MaterialPageRoute(builder: (context) => const AuthScreen()),
-                                  (Route<dynamic> route) => false,
-                                );
-                              },
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                  label: const Text(
-                    'LOG OUT',
-                    style: TextStyle(fontSize: 18, letterSpacing: 1),
+
+              // Logout Section
+              sectionHeader('ACCOUNT ACTIONS'),
+              settingCard(
+                icon: Icons.logout,
+                isDestructive: true,
+                child: const Text(
+                  'Logout',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 16,
+                    color: Colors.red,
                   ),
                 ),
+                onTap: () => _showLogoutDialog(context),
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.cloud_done, color: primaryBlue),
-                  label: const Text('Test Supabase Connection', style: TextStyle(color: primaryBlue)),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: primaryBlue),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const SupabaseTestPage()),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
             ],
           ),
         ),
       ),
     );
+  }
+
+  static Future<void> _showLogoutDialog(BuildContext context) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Logout',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
+          content: const Text(
+            'Are you sure you want to logout?',
+            style: TextStyle(fontSize: 16),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text(
+                'Logout',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _logout(context);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static Future<void> _logout(BuildContext context) async {
+    try {
+      await Supabase.instance.client.auth.signOut();
+
+      if (context.mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const AuthScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error logging out: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

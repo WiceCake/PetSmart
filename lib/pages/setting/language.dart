@@ -13,22 +13,25 @@ class _LanguagePageState extends State<LanguagePage> {
 
   @override
   Widget build(BuildContext context) {
-    const mainBlue = Color(0xFF3B4CCA);
+    const primaryBlue = Color(0xFF233A63);
+    const backgroundColor = Color(0xFFF8F9FA);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7FB),
+      backgroundColor: backgroundColor,
       appBar: AppBar(
         title: const Text(
           'Select Language',
           style: TextStyle(
-            color: mainBlue,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
         ),
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.grey.withValues(alpha: 0.1),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: mainBlue),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -51,8 +54,8 @@ class _LanguagePageState extends State<LanguagePage> {
             child: ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               leading: CircleAvatar(
-                backgroundColor: const Color(0xFFE8EAF6),
-                child: const Icon(Icons.language, color: mainBlue, size: 22),
+                backgroundColor: primaryBlue.withValues(alpha: 0.1),
+                child: Icon(Icons.language, color: primaryBlue, size: 22),
               ),
               title: Text(
                 _english['name'],
@@ -62,9 +65,9 @@ class _LanguagePageState extends State<LanguagePage> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(_english['nativeName'], style: const TextStyle(fontSize: 13, color: Colors.black54)),
               ),
-              trailing: const Icon(
+              trailing: Icon(
                 Icons.check_circle,
-                color: mainBlue,
+                color: primaryBlue,
                 size: 22,
               ),
               onTap: () {

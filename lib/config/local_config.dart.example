@@ -1,0 +1,7 @@
+// This is an example file. Copy this to local_config.dart and add your credentials
+// DO NOT commit local_config.dart to Git!
+
+class LocalConfig {
+  static const String supabaseUrl = 'https://your-project.supabase.co';
+  static const String supabaseAnonKey = 'your-anon-key-here';
+}

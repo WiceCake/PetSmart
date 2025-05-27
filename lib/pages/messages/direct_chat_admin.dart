@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class DirectChatAdminPage extends StatefulWidget {
-  const DirectChatAdminPage({Key? key}) : super(key: key);
+  const DirectChatAdminPage({super.key});
 
   @override
   State<DirectChatAdminPage> createState() => _DirectChatAdminPageState();

@@ -46,3 +46,8 @@ app.*.map.json
 
 # Environment variables
 .env
+
+# Local configuration files (contains sensitive data)
+lib/config/local_config.dart
+local_config.dart
+*.local.dart

@@ -9,26 +9,29 @@ class CountryPage extends StatefulWidget {
 
 class _CountryPageState extends State<CountryPage> {
   final Map<String, dynamic> _philippines = {'name': 'Philippines', 'code': 'PH', 'flag': '🇵🇭'};
-  String _selectedCountryCode = 'PH';
+  final String _selectedCountryCode = 'PH';
 
   @override
   Widget build(BuildContext context) {
-    const mainBlue = Color(0xFF3B4CCA);
+    const primaryBlue = Color(0xFF233A63);
+    const backgroundColor = Color(0xFFF8F9FA);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7FB),
+      backgroundColor: backgroundColor,
       appBar: AppBar(
         title: const Text(
           'Select Country',
           style: TextStyle(
-            color: mainBlue,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
         ),
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.grey.withValues(alpha: 0.1),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: mainBlue),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -62,9 +65,9 @@ class _CountryPageState extends State<CountryPage> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text('Country code: ${_philippines['code']}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
               ),
-              trailing: const Icon(
+              trailing: Icon(
                 Icons.check_circle,
-                color: mainBlue,
+                color: primaryBlue,
                 size: 22,
               ),
               onTap: () {

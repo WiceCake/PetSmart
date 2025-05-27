@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AccountInformationPage extends StatefulWidget {
   const AccountInformationPage({super.key});
@@ -11,56 +11,200 @@ class AccountInformationPage extends StatefulWidget {
 
 class _AccountInformationPageState extends State<AccountInformationPage> {
   final _formKey = GlobalKey<FormState>();
-  final Map<String, dynamic> _userData = {
-    'name': 'John Doe',
-    'email': 'john.doe@example.com',
-    'phone': '+63 9123456789',
-    'birthDate': '1990-01-01',
-  };
+  Map<String, dynamic> _userData = {};
   bool _isEditing = false;
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        setState(() {
+          _isLoading = false;
+          _error = 'User not logged in';
+        });
+        return;
+      }
+
+      // Fetch user profile data
+      final response = await supabase
+          .from('profiles')
+          .select('first_name, last_name, phone_number, birthdate, profile_pic, username, bio')
+          .eq('id', user.id)
+          .single();
+
+      setState(() {
+        _userData = {
+          'name': '${response['first_name'] ?? ''} ${response['last_name'] ?? ''}'.trim(),
+          'firstName': response['first_name'] ?? '',
+          'lastName': response['last_name'] ?? '',
+          'email': user.email ?? '',
+          'phone': response['phone_number'] ?? '',
+          'birthDate': response['birthdate'] ?? '',
+          'profilePic': response['profile_pic'],
+          'username': response['username'] ?? '',
+          'bio': response['bio'] ?? '',
+        };
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Failed to load user data: ${e.toString()}';
+        // Set default values if loading fails
+        _userData = {
+          'name': 'User',
+          'firstName': '',
+          'lastName': '',
+          'email': '',
+          'phone': '',
+          'birthDate': '',
+          'profilePic': null,
+          'username': '',
+          'bio': '',
+        };
+      });
+    }
+  }
+
+  Future<void> _updateUserData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        setState(() {
+          _isLoading = false;
+          _error = 'User not logged in';
+        });
+        return;
+      }
+
+      // Update user profile data
+      await supabase.from('profiles').update({
+        'first_name': _userData['firstName'],
+        'last_name': _userData['lastName'],
+        'phone_number': _userData['phone'],
+        'birthdate': _userData['birthDate'],
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', user.id);
+
+      setState(() {
+        _isLoading = false;
+        _isEditing = false;
+      });
+
+      _showSuccessAnimation();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Failed to update profile: ${e.toString()}';
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update profile: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    const mainBlue = Color(0xFF3B4CCA);
+    const primaryBlue = Color(0xFF233A63);   // PetSmart brand blue
+    const backgroundColor = Color(0xFFF8F9FA);
+    const cardColor = Colors.white;
+
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent));
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7FB),
+      backgroundColor: backgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.grey.withValues(alpha: 0.1),
         centerTitle: true,
         title: const Text(
-          'Account',
+          'Account Information',
           style: TextStyle(
-            color: mainBlue,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            letterSpacing: 0.5,
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: mainBlue),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
           tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
+      body: _isLoading
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading profile...'),
+                ],
+              ),
+            )
+          : _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, size: 64, color: Colors.red),
+                      SizedBox(height: 16),
+                      Text(_error!, textAlign: TextAlign.center),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _loadUserData,
+                        child: Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
           Center(
             child: CircleAvatar(
               radius: 44,
-              backgroundColor: const Color(0xFFE8EAF6),
+              backgroundColor: primaryBlue.withValues(alpha: 0.1),
               child: ClipOval(
-                child: Image.asset(
-                  'assets/profile_placeholder.png',
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(Icons.person, size: 44, color: mainBlue);
-                  },
-                ),
+                child: _userData['profilePic'] != null
+                    ? Image.network(
+                        _userData['profilePic'],
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(Icons.person, size: 44, color: primaryBlue);
+                        },
+                      )
+                    : Icon(Icons.person, size: 44, color: primaryBlue),
               ),
             ),
           ),
@@ -68,10 +212,10 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
           Center(
             child: Text(
               _userData['name'],
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: mainBlue,
+                color: primaryBlue,
                 letterSpacing: 0.2,
               ),
             ),
@@ -91,48 +235,53 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
           Container(
             margin: const EdgeInsets.only(top: 16, bottom: 16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: cardColor,
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.grey.withValues(alpha: 0.1),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
                 ),
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 22.0, vertical: 24.0),
+              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      Text(
                         'Personal Details',
                         style: TextStyle(
-                          color: mainBlue,
+                          color: primaryBlue,
                           fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                           letterSpacing: 0.2,
                         ),
                       ),
                       TextButton(
-                        onPressed: () {
+                        onPressed: () async {
                           if (_isEditing) {
                             if (_formKey.currentState!.validate()) {
                               _formKey.currentState!.save();
-                              _showSuccessAnimation();
+                              await _updateUserData();
                             }
+                          } else {
+                            setState(() {
+                              _isEditing = true;
+                            });
                           }
-                          setState(() {
-                            _isEditing = !_isEditing;
-                          });
                         },
                         style: TextButton.styleFrom(
-                          foregroundColor: mainBlue,
-                          textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                          foregroundColor: primaryBlue,
+                          textStyle: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         child: Text(_isEditing ? 'Save' : 'Edit'),
                       ),
@@ -143,7 +292,7 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
                     key: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: _buildFormFields(mainBlue),
+                      children: _buildFormFields(primaryBlue),
                     ),
                   ),
                 ],
@@ -155,17 +304,30 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
     );
   }
 
-  List<Widget> _buildFormFields(Color mainBlue) {
+  List<Widget> _buildFormFields(Color primaryBlue) {
     final List<Map<String, dynamic>> fields = [
       {
-        'label': 'Full Name',
+        'label': 'First Name',
         'icon': Icons.person_outline,
-        'initialValue': _userData['name'],
-        'key': 'name',
+        'initialValue': _userData['firstName'] ?? '',
+        'key': 'firstName',
         'keyboardType': TextInputType.name,
         'validator': (value) {
           if (value == null || value.isEmpty) {
-            return 'Please enter your name';
+            return 'Please enter your first name';
+          }
+          return null;
+        },
+      },
+      {
+        'label': 'Last Name',
+        'icon': Icons.person_outline,
+        'initialValue': _userData['lastName'] ?? '',
+        'key': 'lastName',
+        'keyboardType': TextInputType.name,
+        'validator': (value) {
+          if (value == null || value.isEmpty) {
+            return 'Please enter your last name';
           }
           return null;
         },
@@ -173,23 +335,19 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
       {
         'label': 'Email Address',
         'icon': Icons.email_outlined,
-        'initialValue': _userData['email'],
+        'initialValue': _userData['email'] ?? '',
         'key': 'email',
+        'readOnly': true, // Email should not be editable
         'keyboardType': TextInputType.emailAddress,
         'validator': (value) {
-          if (value == null || value.isEmpty) {
-            return 'Please enter your email';
-          }
-          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}\$').hasMatch(value)) {
-            return 'Please enter a valid email address';
-          }
+          // Skip validation for read-only email field
           return null;
         },
       },
       {
         'label': 'Phone Number',
         'icon': Icons.phone_outlined,
-        'initialValue': _userData['phone'],
+        'initialValue': _userData['phone'] ?? '',
         'key': 'phone',
         'keyboardType': TextInputType.phone,
         'validator': (value) {
@@ -202,7 +360,7 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
       {
         'label': 'Birth Date',
         'icon': Icons.calendar_today_outlined,
-        'initialValue': _userData['birthDate'],
+        'initialValue': _userData['birthDate'] ?? '',
         'key': 'birthDate',
         'isDate': true,
         'validator': (value) {
@@ -222,7 +380,7 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
           label: field['label'],
           initialValue: field['initialValue'],
           icon: field['icon'],
-          isEditing: _isEditing,
+          isEditing: _isEditing && (field['readOnly'] != true),
           keyboardType: field['keyboardType'] ?? TextInputType.text,
           validator: field['validator'],
           onSaved: (value) {
@@ -238,10 +396,9 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
                 return Theme(
                   data: ThemeData.light().copyWith(
                     colorScheme: ColorScheme.light(
-                      primary: mainBlue,
+                      primary: primaryBlue,
                       onPrimary: Colors.white,
-                    ),
-                    dialogBackgroundColor: Colors.white,
+                    ), dialogTheme: DialogThemeData(backgroundColor: Colors.white),
                   ),
                   child: child!,
                 );
@@ -253,7 +410,7 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
               });
             }
           } : null,
-          mainBlue: mainBlue,
+          primaryBlue: primaryBlue,
         ),
       );
       if (i < fields.length - 1) {
@@ -272,7 +429,7 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
     String? Function(String?)? validator,
     void Function(String?)? onSaved,
     void Function()? onTap,
-    required Color mainBlue,
+    required Color primaryBlue,
   }) {
     return TextFormField(
       initialValue: initialValue,
@@ -283,29 +440,29 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
         color: Color(0xFF222222),
       ),
       decoration: InputDecoration(
-        prefixIcon: Icon(icon, color: mainBlue, size: 22),
+        prefixIcon: Icon(icon, color: primaryBlue, size: 22),
         labelText: label,
         labelStyle: TextStyle(
-          color: mainBlue.withOpacity(0.8),
+          color: primaryBlue.withValues(alpha: 0.8),
           fontWeight: FontWeight.w500,
           fontSize: 14,
         ),
         floatingLabelBehavior: FloatingLabelBehavior.auto,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: mainBlue.withOpacity(0.15)),
+          borderSide: BorderSide(color: primaryBlue.withValues(alpha: 0.15)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: mainBlue.withOpacity(0.15)),
+          borderSide: BorderSide(color: primaryBlue.withValues(alpha: 0.15)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: mainBlue, width: 1.5),
+          borderSide: BorderSide(color: primaryBlue, width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
         suffixIcon: isEditing && onTap != null
-            ? Icon(Icons.arrow_drop_down, color: mainBlue)
+            ? Icon(Icons.arrow_drop_down, color: primaryBlue)
             : null,
       ),
       keyboardType: keyboardType,
@@ -328,7 +485,7 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 8,
                 offset: const Offset(0, 3),
               ),
@@ -339,7 +496,7 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(

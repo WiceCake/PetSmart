@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseTestPage extends StatefulWidget {
-  const SupabaseTestPage({Key? key}) : super(key: key);
+  const SupabaseTestPage({super.key});
 
   @override
   State<SupabaseTestPage> createState() => _SupabaseTestPageState();

@@ -6,10 +6,10 @@ class ViewAllProductsPage extends StatelessWidget {
   final List<Map<String, dynamic>> products;
 
   const ViewAllProductsPage({
-    Key? key,
+    super.key,
     required this.title,
     required this.products,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

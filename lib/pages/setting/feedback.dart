@@ -61,21 +61,25 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
   @override
   Widget build(BuildContext context) {
-    const mainBlue = Color(0xFF3B4CCA);
+    const primaryBlue = Color(0xFF233A63);
+    const backgroundColor = Color(0xFFF8F9FA);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7FB),
+      backgroundColor: backgroundColor,
       appBar: AppBar(
         title: const Text(
           'Send Feedback',
           style: TextStyle(
-            color: mainBlue,
-            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
         ),
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.grey.withValues(alpha: 0.1),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: mainBlue),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -86,12 +90,12 @@ class _FeedbackPageState extends State<FeedbackPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'We value your feedback',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: mainBlue,
+                  color: primaryBlue,
                 ),
               ),
               const SizedBox(height: 8),
@@ -106,7 +110,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
               const SizedBox(height: 24),
 
               // Feedback Category
-              _buildSectionTitle('Category', mainBlue),
+              _buildSectionTitle('Category', primaryBlue),
               const SizedBox(height: 8),
               Container(
                 decoration: BoxDecoration(
@@ -144,7 +148,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
               const SizedBox(height: 24),
 
               // Rating
-              _buildSectionTitle('How would you rate your experience?', mainBlue),
+              _buildSectionTitle('How would you rate your experience?', primaryBlue),
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
@@ -175,7 +179,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       min: 1,
                       max: 5,
                       divisions: 4,
-                      activeColor: mainBlue,
+                      activeColor: primaryBlue,
                       inactiveColor: Colors.grey.shade300,
                       label: _rating.toStringAsFixed(1),
                       onChanged: (value) {
@@ -191,7 +195,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                         Text(
                           'Excellent',
                           style: TextStyle(
-                            color: _rating >= 4 ? mainBlue : Colors.black87,
+                            color: _rating >= 4 ? primaryBlue : Colors.black87,
                             fontWeight: _rating >= 4 ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
@@ -203,7 +207,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
               const SizedBox(height: 24),
 
               // Feedback Text
-              _buildSectionTitle('Your Feedback', mainBlue),
+              _buildSectionTitle('Your Feedback', primaryBlue),
               const SizedBox(height: 8),
               Container(
                 decoration: BoxDecoration(
@@ -240,11 +244,11 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 width: double.infinity,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: mainBlue,
+                    backgroundColor: primaryBlue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     elevation: 2,
                   ),
@@ -283,13 +287,13 @@ class _FeedbackPageState extends State<FeedbackPage> {
     );
   }
 
-  Widget _buildSectionTitle(String title, Color mainBlue) {
+  Widget _buildSectionTitle(String title, Color primaryBlue) {
     return Text(
       title,
       style: TextStyle(
         fontSize: 16,
-        fontWeight: FontWeight.bold,
-        color: mainBlue,
+        fontWeight: FontWeight.w600,
+        color: primaryBlue,
       ),
     );
   }

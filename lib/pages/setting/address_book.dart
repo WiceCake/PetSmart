@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:pet_smart/pages/setting/add_address.dart';
 import 'package:pet_smart/pages/setting/edit_address.dart';
 
-const mainBlue = Color(0xFF3B4CCA);
+// PetSmart brand colors
+const primaryBlue = Color(0xFF233A63);
+const backgroundColor = Color(0xFFF8F9FA);
+const cardColor = Colors.white;
 
 class AddressBookPage extends StatefulWidget {
   const AddressBookPage({super.key});
@@ -14,7 +17,7 @@ class AddressBookPage extends StatefulWidget {
 class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProviderStateMixin {
   // Animation controller for list items
   late AnimationController _animationController;
-  
+
   // Sample addresses - in a real app, this would come from a database or API
   final List<Map<String, dynamic>> _addresses = [
     {
@@ -52,20 +55,21 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7FB),
+      backgroundColor: backgroundColor,
       appBar: AppBar(
         title: const Text(
           'Address Book',
           style: TextStyle(
-            color: mainBlue,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
           ),
         ),
         backgroundColor: Colors.white,
-        elevation: 1,
+        elevation: 0,
+        shadowColor: Colors.grey.withValues(alpha: 0.1),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: mainBlue),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -80,7 +84,7 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
           button: true,
           label: 'Add Address',
           child: FloatingActionButton(
-            backgroundColor: mainBlue,
+            backgroundColor: primaryBlue,
             foregroundColor: Colors.white,
             onPressed: () async {
               final result = await Navigator.push(
@@ -103,13 +107,13 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
                 _animationController.forward();
               }
             },
-            child: const Icon(Icons.add, size: 22),
             tooltip: 'Add Address',
-            elevation: 5,
+            elevation: 3,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
             ),
             mini: true,
+            child: const Icon(Icons.add, size: 22),
           ),
         ),
       ),
@@ -168,11 +172,11 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: mainBlue,
+              backgroundColor: primaryBlue,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
               ),
               elevation: 2,
             ),
@@ -199,40 +203,61 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: cardColor,
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey.withValues(alpha: 0.1),
+                  width: 1,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
                 ],
               ),
               child: ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 leading: CircleAvatar(
-                  backgroundColor: const Color(0xFFE8EAF6),
-                  child: Icon(_getAddressIcon(address['name']), color: mainBlue, size: 22),
+                  backgroundColor: primaryBlue.withValues(alpha: 0.1),
+                  child: Icon(_getAddressIcon(address['name']), color: primaryBlue, size: 22),
                 ),
                 title: Text(
                   address['name'],
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
                 ),
                 subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.only(top: 6),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(address['address'], style: const TextStyle(fontSize: 13, color: Colors.black54)),
-                      const SizedBox(height: 2),
-                      Text(address['phoneNumber'], style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                      Text(
+                        address['address'],
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        address['phoneNumber'],
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 trailing: isDefault
-                    ? const Icon(Icons.check_circle, color: mainBlue, size: 22)
-                    : null,
+                    ? Icon(Icons.check_circle, color: primaryBlue, size: 22)
+                    : Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey[400]),
                 onTap: () async {
                   final result = await Navigator.push(
                     context,
@@ -285,23 +310,5 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
     }
   }
 
-  void _setDefaultAddress(String id) {
-    setState(() {
-      for (var address in _addresses) {
-        address['isDefault'] = address['id'] == id;
-      }
-    });
-    _animationController.reset();
-    _animationController.forward();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Default address updated'),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        backgroundColor: mainBlue,
-      ),
-    );
-  }
+
 }

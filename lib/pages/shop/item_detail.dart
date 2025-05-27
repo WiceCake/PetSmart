@@ -34,10 +34,15 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   late Map<String, dynamic>? product;
   bool isLoading = true;
   
+  // Add state for top selling/order items
+  List<Map<String, dynamic>> topSellingItems = [];
+  bool isLoadingTopSelling = false;
+
   @override
   void initState() {
     super.initState();
     fetchProduct();
+    fetchTopSellingItems();
   }
 
   Future<void> fetchProduct() async {
@@ -55,6 +60,26 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
           : ['assets/placeholder.png']; // fallback image
       isLoading = false;
     });
+  }
+
+  Future<void> fetchTopSellingItems() async {
+    setState(() {
+      isLoadingTopSelling = true;
+    });
+    try {
+      final response = await Supabase.instance.client
+          .from('order_items')
+          .select('product:product_id(id,title,price,description,product_images(image_url,is_thumbnail)),quantity');
+      setState(() {
+        topSellingItems = List<Map<String, dynamic>>.from(response);
+        isLoadingTopSelling = false;
+      });
+    } catch (e) {
+      setState(() {
+        topSellingItems = [];
+        isLoadingTopSelling = false;
+      });
+    }
   }
 
   // Mock data for reviews
@@ -283,6 +308,17 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                           ),
                         ],
                       ),
+                      if (product?['quantity'] != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Quantity: ${product!['quantity']} left',
+                          style: TextStyle(
+                            color: Colors.grey[700],
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       // Rating and reviews
                       Row(
@@ -476,6 +512,90 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                       ),
                       // Bottom padding for sticky buttons
                       const SizedBox(height: 100),
+                      // Top Selling Section
+                      const Text(
+                        'Top Selling',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Builder(
+                        builder: (context) {
+                          if (isLoadingTopSelling) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          if (topSellingItems.isEmpty) {
+                            return const Center(child: Text('No sold items', style: TextStyle(color: Colors.grey, fontSize: 16)));
+                          }
+                          // Show top selling items
+                          return SizedBox(
+                            height: 140,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: topSellingItems.length,
+                              separatorBuilder: (context, i) => const SizedBox(width: 12),
+                              itemBuilder: (context, i) {
+                                final item = topSellingItems[i];
+                                final product = item['product'] ?? {};
+                                final images = (product['product_images'] as List<dynamic>? ?? []);
+                                final imageUrl = images.isNotEmpty ? images.firstWhere((img) => img['is_thumbnail'] == true, orElse: () => images[0])['image_url'] : 'assets/placeholder.png';
+                                return Container(
+                                  width: 180,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.05),
+                                        blurRadius: 6,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          imageUrl,
+                                          height: 60,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => Container(
+                                            color: Colors.grey[300],
+                                            height: 60,
+                                            child: const Icon(Icons.broken_image, color: Colors.grey),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        product['title'] ?? 'No Title',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        product['price'] != null ? '\$${product['price']}' : 'N/A',
+                                        style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w500, fontSize: 14),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Sold: ${item['quantity'] ?? 0}',
+                                        style: const TextStyle(color: Colors.grey, fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),

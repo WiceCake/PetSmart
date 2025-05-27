@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:salomon_bottom_bar/salomon_bottom_bar.dart';
 import 'package:pet_smart/pages/account.dart';
 import 'package:pet_smart/pages/cart.dart';
-import 'package:salomon_bottom_bar/salomon_bottom_bar.dart';
 import 'package:pet_smart/pages/dashboard.dart';
 import 'package:pet_smart/pages/settings.dart';
 import 'package:pet_smart/pages/messages/direct_chat_admin.dart';
@@ -33,6 +33,11 @@ class BottomNavigation extends StatefulWidget {
 class _BottomNavigationState extends State<BottomNavigation> {
   int _selectedIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+  }
+
   // Update the widget options list
   final List<Widget> _widgetOptions = <Widget>[
     const DashboardScreen(),
@@ -59,50 +64,55 @@ class _BottomNavigationState extends State<BottomNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate dynamic sizes based on screen width
-    double iconSize = MediaQuery.of(context).size.width * 0.055; // Dynamic icon size
-    double textSize = MediaQuery.of(context).size.width * 0.028; // Dynamic text size
-    
-    // Adjust padding based on screen width
-    double horizontalPadding = MediaQuery.of(context).size.width * 0.02;
-    double verticalPadding = MediaQuery.of(context).size.width * 0.015;
-    
     return Scaffold(
       body: _widgetOptions.elementAt(_selectedIndex),
-      bottomNavigationBar: Padding(
-        padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: verticalPadding),
-        child: SalomonBottomBar(
-          margin: EdgeInsets.symmetric(horizontal: horizontalPadding / 2),
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          items: [
-            SalomonBottomBarItem(
-              icon: Icon(Icons.home_rounded, size: iconSize),
-              title: Text("Home", style: TextStyle(fontSize: textSize)),
-              selectedColor: primaryBlue,
-            ),
-            SalomonBottomBarItem(
-              icon: Icon(Icons.settings_rounded, size: iconSize),
-              title: Text("Setting", style: TextStyle(fontSize: textSize)),
-              selectedColor: primaryBlue,
-            ),
-            SalomonBottomBarItem(
-              icon: Icon(Icons.message_rounded, size: iconSize),
-              title: Text("Messages", style: TextStyle(fontSize: textSize)),
-              selectedColor: primaryRed,
-            ),
-            SalomonBottomBarItem(
-              icon: Icon(Icons.shopping_cart_outlined, size: iconSize),
-              activeIcon: Icon(Icons.shopping_cart, size: iconSize),
-              title: Text('Cart', style: TextStyle(fontSize: textSize)),
-              selectedColor: primaryBlue,
-            ),
-            SalomonBottomBarItem(
-              icon: Icon(Icons.person_rounded, size: iconSize),
-              title: Text("Account", style: TextStyle(fontSize: textSize)),
-              selectedColor: primaryBlue,
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
             ),
           ],
+        ),
+        child: SafeArea(
+          child: SalomonBottomBar(
+            currentIndex: _selectedIndex,
+            onTap: _onItemTapped,
+            selectedItemColor: primaryBlue,
+            unselectedItemColor: Colors.grey[600],
+            backgroundColor: Colors.white,
+            margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
+            items: [
+              SalomonBottomBarItem(
+                icon: const Icon(Icons.home_rounded),
+                title: const Text("Home"),
+                selectedColor: primaryBlue,
+              ),
+              SalomonBottomBarItem(
+                icon: const Icon(Icons.settings_rounded),
+                title: const Text("Settings"),
+                selectedColor: primaryBlue,
+              ),
+              SalomonBottomBarItem(
+                icon: const Icon(Icons.message_rounded),
+                title: const Text("Messages"),
+                selectedColor: primaryBlue,
+              ),
+              SalomonBottomBarItem(
+                icon: const Icon(Icons.shopping_cart_outlined),
+                title: const Text("Cart"),
+                selectedColor: primaryBlue,
+              ),
+              SalomonBottomBarItem(
+                icon: const Icon(Icons.person_rounded),
+                title: const Text("Account"),
+                selectedColor: primaryBlue,
+              ),
+            ],
+          ),
         ),
       ),
     );

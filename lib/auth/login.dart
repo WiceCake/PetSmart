@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pet_smart/auth/auth.dart';
-import 'package:pet_smart/components/nav_bar.dart';
+import 'package:pet_smart/config/app_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,6 +16,183 @@ class _LoginScreenState extends State<LoginScreen> {
   bool rememberMe = false;
   bool _obscurePassword = true;
   bool _isLoading = false;
+  String? _error;
+
+  Future<void> _login() async {
+    setState(() {
+      _error = null;
+      _isLoading = true;
+    });
+
+    // Validate inputs
+    if (emailController.text.trim().isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Please enter your email address.';
+      });
+      return;
+    }
+
+    if (passwordController.text.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Please enter your password.';
+      });
+      return;
+    }
+
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(emailController.text.trim())) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Please enter a valid email address.';
+      });
+      return;
+    }
+
+    final supabase = Supabase.instance.client;
+
+    try {
+      // Check if Supabase is properly configured
+      if (!AppConfig.isConfigured()) {
+        setState(() {
+          _isLoading = false;
+          _error = 'App configuration error. Please contact support.';
+        });
+        return;
+      }
+
+      // First, ensure any existing session is cleared (for release mode)
+      try {
+        await supabase.auth.signOut();
+        // Small delay to ensure signout is processed
+        await Future.delayed(const Duration(milliseconds: 200));
+      } catch (e) {
+        // Ignore signout errors - user might not be logged in
+        debugPrint('Signout before login (expected): $e');
+      }
+
+      final response = await supabase.auth.signInWithPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text,
+      );
+
+      if (response.user != null && response.session != null) {
+        // Login successful
+        if (!mounted) return;
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Login successful! Welcome back.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Small delay to ensure session is properly set
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        // Navigate back to root - AuthWrapper will handle the navigation
+        if (mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+        }
+      } else {
+        setState(() {
+          _isLoading = false;
+          _error = 'Login failed. Please check your credentials.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        // Handle specific Supabase auth errors
+        String errorMessage = e.toString().toLowerCase();
+
+        debugPrint('Login error: $e');
+        debugPrint('Error type: ${e.runtimeType}');
+
+        if (errorMessage.contains('invalid login credentials') ||
+            errorMessage.contains('invalid_credentials')) {
+          _error = 'Invalid email or password. Please try again.';
+        } else if (errorMessage.contains('email not confirmed')) {
+          _error = 'Please verify your email address before logging in.';
+        } else if (errorMessage.contains('too many requests')) {
+          _error = 'Too many login attempts. Please try again later.';
+        } else if (errorMessage.contains('session_not_found') ||
+                   errorMessage.contains('user_not_found')) {
+          _error = 'Invalid email or password. Please try again.';
+        } else if (errorMessage.contains('network') ||
+                   errorMessage.contains('connection') ||
+                   errorMessage.contains('socket') ||
+                   errorMessage.contains('timeout') ||
+                   errorMessage.contains('host') ||
+                   errorMessage.contains('dns') ||
+                   errorMessage.contains('ssl') ||
+                   errorMessage.contains('certificate')) {
+          _error = 'Network error. Please check your internet connection and try again.';
+        } else if (errorMessage.contains('permission') ||
+                   errorMessage.contains('cleartext') ||
+                   errorMessage.contains('security')) {
+          _error = 'Network security error. Please try again or contact support.';
+        } else if (errorMessage.contains('format') ||
+                   errorMessage.contains('parse') ||
+                   errorMessage.contains('json')) {
+          _error = 'Server response error. Please try again later.';
+        } else {
+          // For release mode, provide more specific error information
+          if (const bool.fromEnvironment('dart.vm.product')) {
+            _error = 'Login failed. Please check your internet connection and try again.';
+          } else {
+            _error = 'Login failed: ${e.toString()}';
+          }
+        }
+      });
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    if (emailController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your email address first.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(emailController.text.trim())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid email address.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final supabase = Supabase.instance.client;
+      await supabase.auth.resetPasswordForEmail(emailController.text.trim());
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password reset email sent! Check your inbox.'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to send reset email. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,34 +200,93 @@ class _LoginScreenState extends State<LoginScreen> {
     const accentColor = Color(0xFFE57373);
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: primaryColor),
-          onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const AuthScreen()),
-            );
-          },
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.blue[50]!,
+              Colors.white,
+              Colors.grey[50]!,
+            ],
+            stops: const [0.0, 0.4, 1.0],
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Logo
-                  Image.asset(
-                    'assets/petsmart_word.png',
-                    height: 100,
-                  ),
-                  const SizedBox(height: 28),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Custom App Bar
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back, color: primaryColor),
+                        onPressed: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (context) => const AuthScreen()),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Main Content
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Logo Container
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Image.asset(
+                              'assets/petsmart_word.png',
+                              height: 80,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  height: 80,
+                                  width: 160,
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[300],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(Icons.pets, size: 32, color: Colors.grey[600]),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 32),
                   // Welcome text
                   const Align(
                     alignment: Alignment.centerLeft,
@@ -72,7 +309,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
+                          color: Colors.black.withValues(alpha: 0.03),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -98,7 +335,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
+                          color: Colors.black.withValues(alpha: 0.03),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -148,9 +385,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const Spacer(),
                       TextButton(
-                        onPressed: () {
-                          // TODO: Implement forgot password
-                        },
+                        onPressed: _forgotPassword,
                         child: const Text(
                           "Forgot Password?",
                           style: TextStyle(
@@ -161,6 +396,33 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ],
                   ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   // Login Button
                   SizedBox(
@@ -175,22 +437,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         elevation: 2,
                       ),
-                      onPressed: _isLoading
-                          ? null
-                          : () async {
-                              setState(() {
-                                _isLoading = true;
-                              });
-                              await Future.delayed(const Duration(seconds: 1));
-                              if (!mounted) return;
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(builder: (context) => const BottomNavigation()),
-                              );
-                              setState(() {
-                                _isLoading = false;
-                              });
-                            },
+                      onPressed: _isLoading ? null : _login,
                       child: _isLoading
                           ? const SizedBox(
                               height: 22,
@@ -285,10 +532,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                ],
+                          const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -349,7 +600,7 @@ class _SocialIconButtonState extends State<_SocialIconButton> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),

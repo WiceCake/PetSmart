@@ -13,9 +13,14 @@ const Color primaryBlue = Color(0xFF3F51B5);   // PetSmart blue
 const Color accentRed = Color(0xFFEF5350);     // Brighter red for emphasis
 const Color backgroundColor = Color(0xFFF6F7FB); // Light background
 
-class DashboardShopScreen extends StatelessWidget {
-  DashboardShopScreen({super.key});
+class DashboardShopScreen extends StatefulWidget {
+  const DashboardShopScreen({super.key});
 
+  @override
+  State<DashboardShopScreen> createState() => _DashboardShopScreenState();
+}
+
+class _DashboardShopScreenState extends State<DashboardShopScreen> {
   final List<Map<String, dynamic>> newArrivals = [
     {
       'image': 'assets/new1.png',
@@ -51,46 +56,44 @@ class DashboardShopScreen extends StatelessWidget {
     },
   ];
 
-  final List<Map<String, dynamic>> topSelling = [
-    {
-      'image': 'assets/food1.png',
-      'name': 'Chicken & Green Pea Recipe',
-      'badge': 'HOT',
-      'rating': 4.9,
-      'soldCount': 520,
-      'price': 34.99,
-    },
-    {
-      'image': 'assets/food2.png',
-      'name': 'Whitefish & Potato',
-      'badge': '25% OFF',
-      'rating': 4.3,        // Added default rating
-      'soldCount': 150,     // Added default sold count
-      'price': 32.50,       // Added default price
-    },
-    {
-      'image': 'assets/food3.png',
-      'name': 'Salmon & Rice',
-      'badge': null,
-      'rating': 4.6,        // Added default rating
-      'soldCount': 280,     // Added default sold count
-      'price': 30.99,       // Added default price
-    },
-    {
-      'image': 'assets/food4.png',
-      'name': 'Turkey & Sweet Potato',
-      'badge': null,
-      'rating': 4.7,        // Added default rating
-      'soldCount': 190,     // Added default sold count
-      'price': 33.00,       // Added default price
-    },
-  ];
-
   final List<String> bannerList = [
     'assets/banner1.png',
     'assets/banner2.png',
     'assets/banner3.png',
   ];
+
+  List<Map<String, dynamic>> topSellingItems = [];
+  bool isLoadingTopSelling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchTopSellingItems();
+  }
+
+  Future<void> fetchTopSellingItems() async {
+    setState(() {
+      isLoadingTopSelling = true;
+    });
+    try {
+      final response = await Supabase.instance.client
+          .from('order_items')
+          .select('product:product_id(id,title,price,description,product_images(image_url,is_thumbnail)),quantity');
+      final valid = List<Map<String, dynamic>>.from(response).where((item) {
+        final product = item['product'];
+        return product != null && product['title'] != null && product['price'] != null;
+      }).toList();
+      setState(() {
+        topSellingItems = valid;
+        isLoadingTopSelling = false;
+      });
+    } catch (e) {
+      setState(() {
+        topSellingItems = [];
+        isLoadingTopSelling = false;
+      });
+    }
+  }
 
   Future<List<Map<String, dynamic>>> fetchNewArrivals() async {
     final response = await Supabase.instance.client
@@ -115,11 +118,11 @@ class DashboardShopScreen extends StatelessWidget {
             if (!snapshot.hasData || snapshot.data!.isEmpty) {
               return const Center(child: Text('No products found.'));
             }
-            // Use your existing _StickySearchScrollView, but pass the fetched data
             return _StickySearchScrollView(
               bannerList: bannerList,
               newArrivals: snapshot.data!,
-              topSelling: topSelling, // You can fetch this similarly
+              topSellingItems: topSellingItems,
+              isLoadingTopSelling: isLoadingTopSelling,
             );
           },
         ),
@@ -131,12 +134,14 @@ class DashboardShopScreen extends StatelessWidget {
 class _StickySearchScrollView extends StatefulWidget {
   final List<String> bannerList;
   final List<Map<String, dynamic>> newArrivals;
-  final List<Map<String, dynamic>> topSelling;
+  final List<Map<String, dynamic>> topSellingItems;
+  final bool isLoadingTopSelling;
 
   const _StickySearchScrollView({
     required this.bannerList,
     required this.newArrivals,
-    required this.topSelling,
+    required this.topSellingItems,
+    required this.isLoadingTopSelling,
   });
 
   @override
@@ -155,7 +160,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
   // Combine all products for search
   List<Map<String, dynamic>> get _allProducts => [
     ...widget.newArrivals,
-    ...widget.topSelling,
+    ...widget.topSellingItems,
   ];
 
   void _onSearchChanged(String query) {
@@ -449,7 +454,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                         MaterialPageRoute(
                           builder: (context) => ViewAllProductsPage(
                             title: "Top Selling",
-                            products: widget.topSelling,
+                            products: widget.topSellingItems,
                           ),
                         ),
                       );
@@ -465,7 +470,17 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _ProductGrid(products: widget.topSelling),
+              child: Builder(
+                builder: (context) {
+                  if (widget.isLoadingTopSelling) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (widget.topSellingItems.isEmpty) {
+                    return const Center(child: Text('No sold items', style: TextStyle(color: Colors.grey, fontSize: 16)));
+                  }
+                  return _ProductGrid(products: widget.topSellingItems);
+                },
+              ),
             ),
             const SizedBox(height: 32),
           ],

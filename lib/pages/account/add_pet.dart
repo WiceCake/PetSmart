@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pet_smart/auth/auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AddPetAccountScreen extends StatefulWidget {
   final String? userName;
@@ -15,9 +15,11 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
   String? selectedPetType;
   String? selectedGender;
 
-  final List<String> petTypes = ['Dog', 'Cat', 'Bird', 'Fish', 'Other'];
+  final List<String> petTypes = ['Cat', 'Dog']; // Updated to only include Cat and Dog
   final List<String> genders = ['Male', 'Female'];
   bool _isLoading = false;
+  String? _error;
+  String? _success;
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -43,6 +45,71 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
     super.dispose();
   }
 
+  Future<void> _addPet() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _success = null;
+    });
+
+    final supabase = Supabase.instance.client;
+    final user = supabase.auth.currentUser;
+
+    if (user == null) {
+      setState(() {
+        _isLoading = false;
+        _error = 'User not found. Please log in again.';
+      });
+      return;
+    }
+
+    if (petNameController.text.trim().isEmpty ||
+        selectedPetType == null ||
+        selectedGender == null) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Please fill all fields.';
+      });
+      return;
+    }
+
+    try {
+      await supabase.from('pets').insert({
+        'user_id': user.id,
+        'name': petNameController.text.trim(),
+        'type': selectedPetType,
+        'gender': selectedGender,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+        _success = 'Pet added successfully!';
+      });
+
+      // Show success message and navigate back
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pet added successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Wait a moment for the SnackBar to show, then navigate back
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) Navigator.pop(context, true); // Return true to indicate success
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = 'Failed to add pet. Please try again.';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const primaryColor = Color(0xFF233A63);
@@ -56,10 +123,7 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: primaryColor),
           onPressed: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const AuthScreen()),
-            );
+            Navigator.pop(context);
           },
         ),
         title: const Text(
@@ -92,7 +156,7 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Colors.black.withValues(alpha: 0.06),
                         blurRadius: 16,
                         offset: const Offset(0, 6),
                       ),
@@ -104,7 +168,7 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
                       // Pet Avatar/Icon
                       Container(
                         decoration: BoxDecoration(
-                          color: primaryColor.withOpacity(0.08),
+                          color: primaryColor.withValues(alpha: 0.08),
                           shape: BoxShape.circle,
                         ),
                         padding: const EdgeInsets.all(18),
@@ -162,7 +226,35 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
                           });
                         },
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 18),
+                      // Error display
+                      if (_error != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _error!,
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                      ],
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
@@ -176,29 +268,7 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
                             elevation: 2,
                           ),
                           icon: const Icon(Icons.add_circle_outline),
-                          onPressed:
-                              _isLoading
-                                  ? null
-                                  : () async {
-                                    setState(() => _isLoading = true);
-                                    await Future.delayed(
-                                      const Duration(seconds: 1),
-                                    );
-                                    setState(() => _isLoading = false);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Pet added successfully!',
-                                        ),
-                                        backgroundColor: accentColor,
-                                      ),
-                                    );
-                                    // Wait a moment for the SnackBar to show, then navigate back
-                                    await Future.delayed(
-                                      const Duration(milliseconds: 500),
-                                    );
-                                    if (mounted) Navigator.pop(context);
-                                  },
+                          onPressed: _isLoading ? null : _addPet,
                           label:
                               _isLoading
                                   ? const SizedBox(
@@ -251,7 +321,7 @@ class _AnimatedInputField extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -297,7 +367,7 @@ class _AnimatedDropdownField extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
