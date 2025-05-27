@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:animated_splash_screen/animated_splash_screen.dart';
 import 'package:pet_smart/auth/auth.dart'; // or your main screen
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load();
   await Supabase.initialize(
-    url: 'https://jgqxknwrcxxhwylnrpfr.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpncXhrbndyY3h4aHd5bG5ycGZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc5NzI1MTcsImV4cCI6MjA2MzU0ODUxN30.uRz08HtNPGD57dHNBSVAL7Txq4_O4JzJvlU7q7UVLjg',
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
   runApp(const MyApp());
 }
