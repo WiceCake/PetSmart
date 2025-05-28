@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pet_smart/pages/appointment/pet_selection.dart';
+import 'package:pet_smart/services/day_slots_service.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 // Color constants matching app design patterns
@@ -20,6 +21,12 @@ class AppointmentCalendarPage extends StatefulWidget {
 class _AppointmentCalendarPageState extends State<AppointmentCalendarPage> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
+  final DaySlotsService _daySlotsService = DaySlotsService();
+
+  bool _isDateAvailable(DateTime date) {
+    // Check if it's a working day (not Sunday)
+    return _daySlotsService.isWorkingDay(date) && !date.isBefore(DateTime.now().subtract(const Duration(days: 1)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,11 +139,14 @@ class _AppointmentCalendarPageState extends State<AppointmentCalendarPage> {
                             lastDay: DateTime.now().add(const Duration(days: 365)),
                             focusedDay: _focusedDay,
                             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                            enabledDayPredicate: _isDateAvailable,
                             onDaySelected: (selectedDay, focusedDay) {
-                              setState(() {
-                                _selectedDay = selectedDay;
-                                _focusedDay = focusedDay;
-                              });
+                              if (_isDateAvailable(selectedDay)) {
+                                setState(() {
+                                  _selectedDay = selectedDay;
+                                  _focusedDay = focusedDay;
+                                });
+                              }
                             },
                             calendarStyle: CalendarStyle(
                               selectedDecoration: BoxDecoration(
@@ -150,6 +160,11 @@ class _AppointmentCalendarPageState extends State<AppointmentCalendarPage> {
                               weekendTextStyle: const TextStyle(color: primaryRed),
                               defaultTextStyle: const TextStyle(color: Colors.black87),
                               outsideTextStyle: TextStyle(color: Colors.grey[400]),
+                              disabledTextStyle: TextStyle(color: Colors.grey[400]),
+                              disabledDecoration: BoxDecoration(
+                                color: Colors.grey[200],
+                                shape: BoxShape.circle,
+                              ),
                             ),
                             headerStyle: const HeaderStyle(
                               formatButtonVisible: false,

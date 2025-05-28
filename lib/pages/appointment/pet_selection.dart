@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:pet_smart/pages/appointment/time.dart';
+import 'package:pet_smart/services/appointment_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 // Color constants matching app design patterns
 const Color primaryBlue = Color(0xFF233A63);   // Main primary color
@@ -8,24 +11,6 @@ const Color primaryRed = Color(0xFFE57373);    // Light coral red
 const Color accentRed = Color(0xFFEF5350);     // Brighter red for emphasis
 const Color backgroundColor = Color(0xFFF6F7FB); // Light background
 const Color primaryGreen = Color(0xFF4CAF50);  // Success green
-
-class PetModel {
-  final String id;
-  final String name;
-  final String species;
-  final String breed;
-  final String imageUrl;
-  final String age;
-
-  PetModel({
-    required this.id,
-    required this.name,
-    required this.species,
-    required this.breed,
-    required this.imageUrl,
-    required this.age,
-  });
-}
 
 class PetSelectionPage extends StatefulWidget {
   final DateTime selectedDate;
@@ -40,43 +25,67 @@ class PetSelectionPage extends StatefulWidget {
 }
 
 class _PetSelectionPageState extends State<PetSelectionPage> {
-  // Demo pets data
-  final List<PetModel> _pets = [
-    PetModel(
-      id: '1',
-      name: 'Max',
-      species: 'Dog',
-      breed: 'Golden Retriever',
-      imageUrl: 'assets/pets/dog1.png',
-      age: '3 years',
-    ),
-    PetModel(
-      id: '2',
-      name: 'Bella',
-      species: 'Dog',
-      breed: 'Poodle',
-      imageUrl: 'assets/pets/dog2.png',
-      age: '1 year',
-    ),
-    PetModel(
-      id: '3',
-      name: 'Whiskers',
-      species: 'Cat',
-      breed: 'Tabby',
-      imageUrl: 'assets/pets/cat1.png',
-      age: '2 years',
-    ),
-    PetModel(
-      id: '4',
-      name: 'Daisy',
-      species: 'Cat',
-      breed: 'Persian',
-      imageUrl: 'assets/pets/cat2.png',
-      age: '4 years',
-    ),
-  ];
+  List<Map<String, dynamic>> _pets = [];
+  Map<String, dynamic>? selectedPet;
+  bool _isLoading = true;
+  String? _error;
+  final AppointmentService _appointmentService = AppointmentService();
+  Set<String> _petsWithAppointments = {};
 
-  PetModel? selectedPet;
+  @override
+  void initState() {
+    super.initState();
+    _loadUserPets();
+  }
+
+  Future<void> _loadUserPets() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        setState(() {
+          _error = 'User not authenticated';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final response = await supabase
+          .from('pets')
+          .select('id, name, type, gender, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false);
+
+      // Check which pets already have appointments on the selected date
+      final petsWithAppointments = <String>{};
+      for (final pet in response) {
+        final hasAppointment = await _appointmentService.hasPetAppointmentOnDate(
+          pet['id'],
+          widget.selectedDate,
+        );
+        if (hasAppointment) {
+          petsWithAppointments.add(pet['id']);
+        }
+      }
+
+      setState(() {
+        _pets = List<Map<String, dynamic>>.from(response);
+        _petsWithAppointments = petsWithAppointments;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load pets. Please try again.';
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -169,84 +178,129 @@ class _PetSelectionPageState extends State<PetSelectionPage> {
 
                     // Pet list
                     Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        itemCount: _pets.length,
-                        itemBuilder: (context, index) {
-                          final pet = _pets[index];
-                          final bool isSelected = selectedPet?.id == pet.id;
+                      child: _isLoading
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: primaryBlue,
+                              ),
+                            )
+                          : _error != null
+                              ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.error_outline,
+                                        color: Colors.red[400],
+                                        size: 48,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        _error!,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.red[600],
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ElevatedButton(
+                                        onPressed: _loadUserPets,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: primaryBlue,
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        child: const Text('Retry'),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : _pets.isEmpty
+                                  ? const Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.pets,
+                                            color: Colors.grey,
+                                            size: 48,
+                                          ),
+                                          SizedBox(height: 16),
+                                          Text(
+                                            'No pets found',
+                                            style: TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          SizedBox(height: 8),
+                                          Text(
+                                            'Please add a pet in your account settings first',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                      itemCount: _pets.length,
+                                      itemBuilder: (context, index) {
+                                        final pet = _pets[index];
+                                        final bool isSelected = selectedPet?['id'] == pet['id'];
+                                        final bool hasAppointment = _petsWithAppointments.contains(pet['id']);
 
-                          return PetCard(
-                            pet: pet,
-                            isSelected: isSelected,
-                            onTap: () {
-                              setState(() {
-                                selectedPet = pet;
-                              });
-                            },
-                          );
-                        },
-                      ),
+                                        return PetCard(
+                                          pet: pet,
+                                          isSelected: isSelected,
+                                          hasAppointment: hasAppointment,
+                                          selectedDate: widget.selectedDate,
+                                          onTap: hasAppointment ? null : () {
+                                            setState(() {
+                                              selectedPet = pet;
+                                            });
+                                          },
+                                        );
+                                      },
+                                    ),
                     ),
 
-                    // Action buttons
+                    // Action button
                     Container(
                       padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryBlue,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                elevation: 2,
-                              ),
-                              onPressed: selectedPet == null
-                                ? null
-                                : () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (context) => const AppointmentTimePage(),
-                                      ),
-                                    );
-                                  },
-                              child: const Text(
-                                'Continue',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                              ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryBlue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
                             ),
+                            elevation: 2,
                           ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: primaryBlue,
-                                side: const BorderSide(color: primaryBlue, width: 2),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              onPressed: () {
-                                _showAddPetDialog(context);
+                          onPressed: selectedPet == null
+                            ? null
+                            : () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => AppointmentTimePage(
+                                      selectedDate: widget.selectedDate,
+                                      selectedPetId: selectedPet!['id'],
+                                    ),
+                                  ),
+                                );
                               },
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.add),
-                                  SizedBox(width: 8),
-                                  Text('Add New Pet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                ],
-                              ),
-                            ),
+                          child: const Text(
+                            'Continue',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
@@ -258,57 +312,63 @@ class _PetSelectionPageState extends State<PetSelectionPage> {
       ),
     );
   }
-
-  void _showAddPetDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add New Pet'),
-        content: const Text('This feature will allow you to add a new pet to your profile.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class PetCard extends StatelessWidget {
-  final PetModel pet;
+  final Map<String, dynamic> pet;
   final bool isSelected;
-  final VoidCallback onTap;
+  final bool hasAppointment;
+  final DateTime selectedDate;
+  final VoidCallback? onTap;
 
   const PetCard({
     super.key,
     required this.pet,
     required this.isSelected,
+    required this.hasAppointment,
+    required this.selectedDate,
     required this.onTap,
   });
+
+  IconData _getPetIcon(String type) {
+    switch (type.toLowerCase()) {
+      case 'dog':
+        return FontAwesomeIcons.dog;
+      case 'cat':
+        return FontAwesomeIcons.cat;
+      default:
+        return FontAwesomeIcons.paw;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? primaryBlue : Colors.transparent,
-            width: 2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withValues(alpha: 0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: hasAppointment ? 0.6 : 1.0,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: hasAppointment ? Colors.grey[100] : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: hasAppointment
+                  ? Colors.grey[300]!
+                  : isSelected
+                      ? primaryBlue
+                      : Colors.transparent,
+              width: 2,
             ),
-          ],
-        ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withValues(alpha: hasAppointment ? 0.05 : 0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -320,24 +380,12 @@ class PetCard extends StatelessWidget {
                   color: Colors.grey[200],
                   shape: BoxShape.circle,
                 ),
-                child: ClipOval(
-                  child: pet.imageUrl.startsWith('assets')
-                      ? Image.asset(
-                          pet.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Icon(
-                              pet.species == 'Dog' ? Icons.pets : Icons.catching_pokemon,
-                              size: 40,
-                              color: Colors.grey[500],
-                            );
-                          },
-                        )
-                      : Icon(
-                          pet.species == 'Dog' ? Icons.pets : Icons.catching_pokemon,
-                          size: 40,
-                          color: Colors.grey[500],
-                        ),
+                child: Center(
+                  child: FaIcon(
+                    _getPetIcon(pet['type'] ?? ''),
+                    size: 28,
+                    color: primaryBlue,
+                  ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -346,7 +394,7 @@ class PetCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      pet.name,
+                      pet['name'] ?? 'Unknown Pet',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
@@ -354,20 +402,30 @@ class PetCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${pet.species} • ${pet.breed}',
+                      '${pet['type'] ?? 'Unknown'} • ${pet['gender'] ?? 'Unknown'}',
                       style: TextStyle(
                         color: Colors.grey[700],
                         fontSize: 15,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Age: ${pet.age}',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
+                    if (hasAppointment) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Already booked for ${selectedDate.day}/${selectedDate.month}',
+                          style: TextStyle(
+                            color: Colors.orange[800],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -383,6 +441,7 @@ class PetCard extends StatelessWidget {
                 ),
             ],
           ),
+        ),
         ),
       ),
     );

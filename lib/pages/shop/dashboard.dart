@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:pet_smart/pages/shop/item_detail.dart';
 import 'package:pet_smart/pages/shop/search_results.dart';
-import 'package:pet_smart/pages/cart.dart'; // <-- Import the cart page
-import 'package:pet_smart/components/search_service.dart'; // <-- Ensure this import is present and the local one is removed
-import 'package:pet_smart/pages/view_all_products.dart'; // <-- Import the new ViewAllProductsPage
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/pages/cart.dart';
+import 'package:pet_smart/components/search_service.dart';
+import 'package:pet_smart/pages/view_all_products.dart';
+import 'package:pet_smart/services/product_service.dart';
 
-// Add these color constants at the top of the file
+// Color constants matching app design patterns
+const Color primaryBlue = Color(0xFF233A63);   // Main primary color
+const Color secondaryBlue = Color(0xFF3F51B5); // Secondary blue
 const Color primaryRed = Color(0xFFE57373);    // Light coral red
-const Color primaryBlue = Color(0xFF3F51B5);   // PetSmart blue
 const Color accentRed = Color(0xFFEF5350);     // Brighter red for emphasis
 const Color backgroundColor = Color(0xFFF6F7FB); // Light background
+const Color successGreen = Color(0xFF4CAF50);  // Success green
 
 class DashboardShopScreen extends StatefulWidget {
   const DashboardShopScreen({super.key});
@@ -21,40 +23,14 @@ class DashboardShopScreen extends StatefulWidget {
 }
 
 class _DashboardShopScreenState extends State<DashboardShopScreen> {
-  final List<Map<String, dynamic>> newArrivals = [
-    {
-      'image': 'assets/new1.png',
-      'name': 'Tuna Delight',
-      'badge': 'NEW',
-      'rating': 4.8,
-      'soldCount': 120,
-      'price': 24.99,
-    },
-    {
-      'image': 'assets/new2.png',
-      'name': 'Chicken Feast',
-      'badge': 'HOT',
-      'rating': 4.5,
-      'soldCount': 350,
-      'price': 29.99,
-    },
-    {
-      'image': 'assets/new3.png',
-      'name': 'Salmon Bites',
-      'badge': null,
-      'rating': 4.2,
-      'soldCount': 89,
-      'price': 19.99,
-    },
-    {
-      'image': 'assets/new4.png',
-      'name': 'Beef & Veggies',
-      'badge': 'SALE',
-      'rating': 4.7,
-      'soldCount': 230,
-      'price': 22.99,
-    },
-  ];
+  final ProductService _productService = ProductService();
+
+  List<Map<String, dynamic>> newArrivals = [];
+  List<Map<String, dynamic>> topSellingItems = [];
+
+  bool isLoadingNewArrivals = true;
+  bool isLoadingTopSelling = true;
+  String? errorMessage;
 
   final List<String> bannerList = [
     'assets/banner1.png',
@@ -62,46 +38,65 @@ class _DashboardShopScreenState extends State<DashboardShopScreen> {
     'assets/banner3.png',
   ];
 
-  List<Map<String, dynamic>> topSellingItems = [];
-  bool isLoadingTopSelling = false;
-
   @override
   void initState() {
     super.initState();
-    fetchTopSellingItems();
+    _loadProducts();
   }
 
-  Future<void> fetchTopSellingItems() async {
-    setState(() {
-      isLoadingTopSelling = true;
-    });
+  Future<void> _loadProducts() async {
+    await Future.wait([
+      _loadNewArrivals(),
+      _loadTopSelling(),
+    ]);
+  }
+
+  Future<void> _loadNewArrivals() async {
     try {
-      final response = await Supabase.instance.client
-          .from('order_items')
-          .select('product:product_id(id,title,price,description,product_images(image_url,is_thumbnail)),quantity');
-      final valid = List<Map<String, dynamic>>.from(response).where((item) {
-        final product = item['product'];
-        return product != null && product['title'] != null && product['price'] != null;
-      }).toList();
       setState(() {
-        topSellingItems = valid;
+        isLoadingNewArrivals = true;
+        errorMessage = null;
+      });
+
+      final products = await _productService.getNewArrivals(limit: 2);
+
+      if (!mounted) return;
+      setState(() {
+        newArrivals = products;
+        isLoadingNewArrivals = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        isLoadingNewArrivals = false;
+        errorMessage = 'Failed to load new arrivals. Please try again.';
+      });
+    }
+  }
+
+  Future<void> _loadTopSelling() async {
+    try {
+      setState(() {
+        isLoadingTopSelling = true;
+      });
+
+      final products = await _productService.getTopSellingProducts(limit: 2);
+
+      if (!mounted) return;
+      setState(() {
+        topSellingItems = products;
         isLoadingTopSelling = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        topSellingItems = [];
         isLoadingTopSelling = false;
       });
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchNewArrivals() async {
-    final response = await Supabase.instance.client
-        .from('products')
-        .select('*, product_images(*)')
-        .order('created_at', ascending: false)
-        .limit(10);
-    return List<Map<String, dynamic>>.from(response);
+  Future<void> _refreshData() async {
+    await _loadProducts();
   }
 
   @override
@@ -109,22 +104,63 @@ class _DashboardShopScreenState extends State<DashboardShopScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       body: SafeArea(
-        child: FutureBuilder<List<Map<String, dynamic>>>(
-          future: fetchNewArrivals(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return const Center(child: Text('No products found.'));
-            }
-            return _StickySearchScrollView(
-              bannerList: bannerList,
-              newArrivals: snapshot.data!,
-              topSellingItems: topSellingItems,
-              isLoadingTopSelling: isLoadingTopSelling,
-            );
-          },
+        child: RefreshIndicator(
+          onRefresh: _refreshData,
+          color: primaryBlue,
+          child: Builder(
+            builder: (context) {
+              // Show loading state while both sections are loading
+              if (isLoadingNewArrivals && isLoadingTopSelling) {
+                return const Center(
+                  child: CircularProgressIndicator(
+                    color: primaryBlue,
+                  ),
+                );
+              }
+
+              // Show error state if there's an error and no data
+              if (errorMessage != null && newArrivals.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: Colors.red[400],
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        errorMessage!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.red[600],
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _loadProducts,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryBlue,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return _StickySearchScrollView(
+                bannerList: bannerList,
+                newArrivals: newArrivals,
+                topSellingItems: topSellingItems,
+                isLoadingNewArrivals: isLoadingNewArrivals,
+                isLoadingTopSelling: isLoadingTopSelling,
+              );
+            },
+          ),
         ),
       ),
     );
@@ -135,12 +171,14 @@ class _StickySearchScrollView extends StatefulWidget {
   final List<String> bannerList;
   final List<Map<String, dynamic>> newArrivals;
   final List<Map<String, dynamic>> topSellingItems;
+  final bool isLoadingNewArrivals;
   final bool isLoadingTopSelling;
 
   const _StickySearchScrollView({
     required this.bannerList,
     required this.newArrivals,
     required this.topSellingItems,
+    required this.isLoadingNewArrivals,
     required this.isLoadingTopSelling,
   });
 
@@ -157,32 +195,96 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
   bool _showSuggestions = false;
   List<Map<String, dynamic>> _searchResults = [];
 
+  // All products section with lazy loading
+  final ProductService _productService = ProductService();
+  final List<Map<String, dynamic>> _allProducts = [];
+  bool _isLoadingAllProducts = false;
+  bool _hasMoreProducts = true;
+  int _currentPage = 1;
+  final int _productsPerPage = 10;
+
   // Combine all products for search
-  List<Map<String, dynamic>> get _allProducts => [
+  List<Map<String, dynamic>> get _searchableProducts => [
     ...widget.newArrivals,
     ...widget.topSellingItems,
+    ..._allProducts,
   ];
 
-  void _onSearchChanged(String query) {
+  void _onSearchChanged(String query) async {
     setState(() {
       if (query.isEmpty) {
         _showSuggestions = false;
         _searchResults = [];
       } else {
         _showSuggestions = true;
-        _searchResults = SearchService.searchProducts(query, _allProducts); // Uses the imported SearchService
       }
     });
+
+    if (query.isNotEmpty) {
+      try {
+        // Use ProductService for better search results
+        final ProductService productService = ProductService();
+        final searchResults = await productService.searchProducts(query);
+
+        if (mounted) {
+          setState(() {
+            _searchResults = searchResults;
+          });
+        }
+      } catch (e) {
+        // Fallback to local search if service fails
+        if (mounted) {
+          setState(() {
+            _searchResults = SearchService.searchProducts(query, _searchableProducts);
+          });
+        }
+      }
+    }
   }
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onScroll);
+    _loadAllProducts(); // Load initial products
+  }
+
+  Future<void> _loadAllProducts() async {
+    if (_isLoadingAllProducts || !_hasMoreProducts) return;
+
+    try {
+      setState(() {
+        _isLoadingAllProducts = true;
+      });
+
+      final products = await _productService.getAllProducts(
+        page: _currentPage,
+        limit: _productsPerPage,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        if (products.isEmpty) {
+          _hasMoreProducts = false;
+        } else {
+          _allProducts.addAll(products);
+          _currentPage++;
+        }
+        _isLoadingAllProducts = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingAllProducts = false;
+      });
+    }
   }
 
   void _onScroll() {
     final offset = _controller.offset;
+
+    // Handle search bar visibility
     if (offset <= 0) {
       if (!_showSearchBar) setState(() => _showSearchBar = true);
       _lastOffset = offset;
@@ -196,6 +298,11 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
       setState(() => _showSearchBar = true);
     }
     _lastOffset = offset;
+
+    // Handle lazy loading for all products
+    if (_controller.position.pixels >= _controller.position.maxScrollExtent - 200) {
+      _loadAllProducts();
+    }
   }
 
   @override
@@ -218,7 +325,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 8,
                   ),
                 ],
@@ -267,7 +374,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                           return ListTile(
                             leading: const Icon(Icons.search_outlined),
                             title: Text(
-                              product['title'] ?? 'No Title',
+                              product['title'] ?? product['name'] ?? 'No Title',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -277,24 +384,19 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                               color: Colors.grey,
                             ),
                             onTap: () {
+                              final productName = product['title'] ?? product['name'] ?? '';
                               setState(() {
-                                _searchController.text = product['title'] ?? '';
+                                _searchController.text = productName;
                                 _showSuggestions = false;
                               });
-                              
-                              // Get all related products
-                              final relatedProducts = SearchService.searchProducts(
-                                product['title']?.split(' ')[0] ?? '', // Search by first word
-                                _allProducts,
-                              );
-                              
-                              // Navigate to search results
+
+                              // Navigate to search results with current search results
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => SearchResultsScreen(
-                                    searchQuery: product['title'] ?? '',
-                                    searchResults: relatedProducts,
+                                    searchQuery: productName,
+                                    searchResults: _searchResults,
                                   ),
                                 ),
                               );
@@ -366,7 +468,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(0.1),
+                      color: primaryBlue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -374,7 +476,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                       children: const [
                         Icon(
                           Icons.new_releases_rounded,
-                          color: Colors.teal,
+                          color: primaryBlue,
                           size: 20,
                         ),
                         SizedBox(width: 4),
@@ -383,7 +485,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
-                            color: Colors.teal,
+                            color: primaryBlue,
                           ),
                         ),
                       ],
@@ -403,7 +505,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                       );
                     },
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.teal,
+                      foregroundColor: primaryBlue,
                       textStyle: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     child: const Text('See All'),
@@ -413,7 +515,33 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _ProductGrid(products: widget.newArrivals),
+              child: Builder(
+                builder: (context) {
+                  if (widget.isLoadingNewArrivals) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: CircularProgressIndicator(
+                          color: primaryBlue,
+                        ),
+                      ),
+                    );
+                  }
+                  if (widget.newArrivals.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: Text(
+                          'No new arrivals available at the moment',
+                          style: TextStyle(color: Colors.grey, fontSize: 16),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
+                  return _ProductRow(products: widget.newArrivals);
+                },
+              ),
             ),
             // Top Selling Section
             Padding(
@@ -423,7 +551,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.deepOrange.withOpacity(0.1),
+                      color: primaryRed.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -431,7 +559,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                       children: const [
                         Icon(
                           Icons.local_fire_department_rounded,
-                          color: Colors.deepOrange,
+                          color: primaryRed,
                           size: 20,
                         ),
                         SizedBox(width: 4),
@@ -440,7 +568,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
-                            color: Colors.deepOrange,
+                            color: primaryRed,
                           ),
                         ),
                       ],
@@ -460,7 +588,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                       );
                     },
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.deepOrange,
+                      foregroundColor: primaryRed,
                       textStyle: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     child: const Text('See All'),
@@ -473,14 +601,142 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
               child: Builder(
                 builder: (context) {
                   if (widget.isLoadingTopSelling) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: CircularProgressIndicator(
+                          color: primaryBlue,
+                        ),
+                      ),
+                    );
                   }
                   if (widget.topSellingItems.isEmpty) {
-                    return const Center(child: Text('No sold items', style: TextStyle(color: Colors.grey, fontSize: 16)));
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: Text(
+                          'No top selling products available yet',
+                          style: TextStyle(color: Colors.grey, fontSize: 16),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
                   }
-                  return _ProductGrid(products: widget.topSellingItems);
+                  return _ProductRow(products: widget.topSellingItems);
                 },
               ),
+            ),
+
+            // All Products Section
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: successGreen.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(
+                          Icons.grid_view_rounded,
+                          color: successGreen,
+                          size: 20,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          "All Products",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: successGreen,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  if (_allProducts.isNotEmpty)
+                    Text(
+                      '${_allProducts.length} products',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // All Products Grid with Lazy Loading
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _allProducts.isEmpty && !_isLoadingAllProducts
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: Text(
+                          'No products available currently',
+                          style: TextStyle(color: Colors.grey, fontSize: 16),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        // Products Grid
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 0.75,
+                            mainAxisSpacing: 16,
+                            crossAxisSpacing: 16,
+                          ),
+                          itemCount: _allProducts.length,
+                          itemBuilder: (context, index) {
+                            final product = _allProducts[index];
+                            return _ProductCard(
+                              id: product['id'] ?? '',
+                              image: product['image'] ?? 'assets/placeholder.png',
+                              name: product['title'] ?? product['name'] ?? 'Unknown Product',
+                              description: product['description'] ?? 'No description available',
+                              price: (product['price'] ?? 0.0).toDouble(),
+                              rating: (product['rating'] ?? 4.0).toDouble(),
+                              soldCount: product['soldCount'] ?? product['total_sold'] ?? 0,
+                              badge: product['badge'],
+                            );
+                          },
+                        ),
+
+                        // Loading indicator for lazy loading
+                        if (_isLoadingAllProducts)
+                          const Padding(
+                            padding: EdgeInsets.all(20.0),
+                            child: CircularProgressIndicator(
+                              color: primaryBlue,
+                            ),
+                          ),
+
+                        // End of products indicator
+                        if (!_hasMoreProducts && _allProducts.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Text(
+                              'No more products to load',
+                              style: TextStyle(
+                                color: Colors.grey[500],
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
             ),
             const SizedBox(height: 32),
           ],
@@ -627,7 +883,7 @@ class _BannerCarouselState extends State<_BannerCarousel> {
               width: _current == index ? 18 : 8,
               height: 8,
               decoration: BoxDecoration(
-                color: _current == index ? primaryBlue : primaryBlue.withOpacity(0.3),  // Changed from teal
+                color: _current == index ? primaryBlue : primaryBlue.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(8),
               ),
             );
@@ -638,51 +894,34 @@ class _BannerCarouselState extends State<_BannerCarousel> {
   }
 }
 
-// Grid for 2 cards per row, with improved card design
-class _ProductGrid extends StatelessWidget {
+// Row for 2 products side by side (for New Arrivals and Top Selling)
+class _ProductRow extends StatelessWidget {
   final List<Map<String, dynamic>> products;
 
-  const _ProductGrid({required this.products});
+  const _ProductRow({required this.products});
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: products.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 0.75, // Adjusted for new card layout
-      ),
-      itemBuilder: (context, index) {
-        final product = products[index];
-        final images = product['product_images'] as List<dynamic>? ?? [];
-        final thumbnail = images.isNotEmpty
-            ? images.firstWhere((img) => img['is_thumbnail'] == true, orElse: () => images.first)
-            : null;
-        final imageUrl = thumbnail != null ? thumbnail['image_url'] as String? ?? '' : '';
-
-        final name = product['title'] ?? 'No Name';
-        final description = product['description'] ?? 'No Description';
-        final badge = product['badge'] as String?;
-        final price = product['price'] as num? ?? 0.0;
-        final rating = product['rating'] as num? ?? 0.0;
-        final soldCount = product['soldCount'] as int? ?? 0;
-        final id = product['id'] as String? ?? '';
-
-        return _ProductCard(
-          id: id,
-          image: imageUrl.isNotEmpty ? imageUrl : 'assets/placeholder.png',
-          name: name,
-          description: description,
-          badge: badge,
-          price: price.toDouble(),
-          rating: rating.toDouble(),
-          soldCount: soldCount,
-        );
-      },
+    return Row(
+      children: [
+        for (int i = 0; i < products.length && i < 2; i++) ...[
+          Expanded(
+            child: _ProductCard(
+              id: products[i]['id'] ?? '',
+              image: products[i]['image'] ?? 'assets/placeholder.png',
+              name: products[i]['title'] ?? products[i]['name'] ?? 'Unknown Product',
+              description: products[i]['description'] ?? 'No description available',
+              price: (products[i]['price'] ?? 0.0).toDouble(),
+              rating: (products[i]['rating'] ?? 4.0).toDouble(),
+              soldCount: products[i]['soldCount'] ?? products[i]['total_sold'] ?? 0,
+              badge: products[i]['badge'],
+            ),
+          ),
+          if (i < products.length - 1 && i < 1) const SizedBox(width: 16),
+        ],
+        // Fill remaining space if only one product
+        if (products.length == 1) const Expanded(child: SizedBox()),
+      ],
     );
   }
 }
@@ -733,6 +972,7 @@ class _ProductCard extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Product Image
                     AspectRatio(
@@ -742,19 +982,13 @@ class _ProductCard extends StatelessWidget {
                           color: Colors.grey[100],
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Image.network(
-                          image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: Colors.grey[300],
-                              child: Icon(Icons.broken_image, color: Colors.grey[600]),
-                            );
-                          },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: _buildProductImage(image),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     // Product Name
                     Text(
                       name,
@@ -765,7 +999,7 @@ class _ProductCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 1),
                     // Product Description
                     Text(
                       description,
@@ -776,7 +1010,7 @@ class _ProductCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const Spacer(),
+                    const SizedBox(height: 8),
                     // Rating and Sold Count
                     Row(
                       children: [
@@ -846,6 +1080,77 @@ class _ProductCard extends StatelessWidget {
     );
   }
 
+  Widget _buildProductImage(String imageUrl) {
+    // Check if it's a network URL or asset path
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            color: Colors.grey[200],
+            child: Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                    : null,
+                color: primaryBlue,
+                strokeWidth: 2,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: Colors.grey[300],
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, color: Colors.grey[600], size: 32),
+                const SizedBox(height: 4),
+                Text(
+                  'Image not available',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    } else {
+      // Asset image
+      return Image.asset(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: Colors.grey[300],
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, color: Colors.grey[600], size: 32),
+                const SizedBox(height: 4),
+                Text(
+                  'Image not found',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    }
+  }
+
   Color _getBadgeColor(String badge) {
     switch (badge.toUpperCase()) {
       case 'NEW':
@@ -861,13 +1166,3 @@ class _ProductCard extends StatelessWidget {
 }
 
 // Removed local SearchService definition as it's now imported
-
-// This function fetches products with their images
-Future<List<Map<String, dynamic>>> fetchNewArrivals() async {
-  final response = await Supabase.instance.client
-      .from('products')
-      .select('*, product_images(*)')
-      .order('created_at', ascending: false)
-      .limit(10);
-  return List<Map<String, dynamic>>.from(response);
-}

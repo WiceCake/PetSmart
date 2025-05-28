@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:pet_smart/pages/shop/item_detail.dart';
+import 'package:pet_smart/services/product_service.dart';
 
-// Add these color constants at the top of the file
+// Color constants matching app design patterns
+const Color primaryBlue = Color(0xFF233A63);   // Main primary color
+const Color secondaryBlue = Color(0xFF3F51B5); // Secondary blue
 const Color primaryRed = Color(0xFFE57373);    // Light coral red
-const Color primaryBlue = Color(0xFF3F51B5);   // PetSmart blue
 const Color accentRed = Color(0xFFEF5350);     // Brighter red for emphasis
 const Color backgroundColor = Color(0xFFF6F7FB); // Light background
+const Color successGreen = Color(0xFF4CAF50);  // Success green
 
 class SearchResultsScreen extends StatefulWidget {
   final String searchQuery;
@@ -22,109 +25,204 @@ class SearchResultsScreen extends StatefulWidget {
 }
 
 class _SearchResultsScreenState extends State<SearchResultsScreen> {
-  String _sortBy = 'Popular'; // Default sort option
+  final ProductService _productService = ProductService();
+  final TextEditingController _searchController = TextEditingController();
+
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isLoading = false;
+  String? _errorMessage;
+  String _sortBy = 'Popular';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.text = widget.searchQuery;
+    _searchResults = List.from(widget.searchResults);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.trim().isEmpty) return;
+
+    try {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+
+      final results = await _productService.searchProducts(query.trim());
+
+      if (!mounted) return;
+
+      setState(() {
+        _searchResults = results;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to search products. Please try again.';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        title: Text('Search Results'),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
+        elevation: 1,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: primaryBlue),
           onPressed: () => Navigator.pop(context),
         ),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Search header
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.white,
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '"${widget.searchQuery}"',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+        title: SizedBox(
+          height: 40,
+          child: TextField(
+            controller: _searchController,
+            onSubmitted: _performSearch,
+            decoration: InputDecoration(
+              hintText: 'Search products...',
+              prefixIcon: const Icon(Icons.search, color: primaryBlue, size: 20),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 20),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchResults = [];
+                        });
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: backgroundColor,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide.none,
               ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             ),
-            // Filter and Sort bar
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: Colors.white,
-              child: Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      // Show filter options
-                    },
-                    icon: const Icon(Icons.filter_list),
-                    label: const Text('Filter'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: primaryBlue,
-                      side: BorderSide(color: primaryBlue),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      _showSortOptions(context);
-                    },
-                    icon: const Icon(Icons.sort),
-                    label: Text('Sort by: $_sortBy'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: primaryBlue,
-                      side: BorderSide(color: primaryBlue),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Results count
-            Container(
-              padding: const EdgeInsets.all(16),
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '${widget.searchResults.length} Results Found',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 14,
-                ),
-              ),
-            ),
-            // Search results grid
-            Expanded(
-              child: GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.75, // Adjusted for new card layout
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                ),
-                itemCount: widget.searchResults.length,
-                itemBuilder: (context, index) {
-                  final product = widget.searchResults[index];
-                  return _SearchResultCard(product: product);
-                },
-              ),
-            ),
-          ],
+          ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search, color: primaryBlue),
+            onPressed: () => _performSearch(_searchController.text),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Filter and Sort bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Colors.white,
+            child: Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    // Show filter options
+                  },
+                  icon: const Icon(Icons.filter_list),
+                  label: const Text('Filter'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: primaryBlue,
+                    side: BorderSide(color: primaryBlue),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    _showSortOptions(context);
+                  },
+                  icon: const Icon(Icons.sort),
+                  label: Text('Sort by: $_sortBy'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: primaryBlue,
+                    side: BorderSide(color: primaryBlue),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Results count and status
+          Container(
+            padding: const EdgeInsets.all(16),
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _isLoading
+                  ? 'Searching...'
+                  : _errorMessage != null
+                      ? _errorMessage!
+                      : '${_searchResults.length} Results Found',
+              style: TextStyle(
+                color: _errorMessage != null ? Colors.red[600] : Colors.grey[600],
+                fontSize: 14,
+              ),
+            ),
+          ),
+          // Search results grid
+          Expanded(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: primaryBlue,
+                    ),
+                  )
+                : _searchResults.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.search_off,
+                              size: 64,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No products found',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Try searching with different keywords',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.75,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                        ),
+                        itemCount: _searchResults.length,
+                        itemBuilder: (context, index) {
+                          final product = _searchResults[index];
+                          return _SearchResultCard(product: product);
+                        },
+                      ),
+          ),
+        ],
       ),
     );
   }
@@ -197,7 +295,7 @@ class _SearchResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Extract and provide defaults for product data
     final String imageUrl = product['image'] ?? 'assets/placeholder.png'; // Ensure placeholder asset exists
-    final String name = product['name'] ?? 'Unnamed Product';
+    final String name = product['title'] ?? product['name'] ?? 'Unnamed Product';
     final double price = (product['price'] is num)
         ? (product['price'] as num).toDouble()
         : (double.tryParse(product['price'].toString().replaceAll(r'$', '')) ?? 0.0);
@@ -216,7 +314,7 @@ class _SearchResultCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         elevation: 1, // Added subtle shadow
-        shadowColor: Colors.grey.withOpacity(0.2),
+        shadowColor: Colors.grey.withValues(alpha: 0.2),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () {
@@ -269,9 +367,9 @@ class _SearchResultCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
-                    // Product Description (placeholder)
+                    // Product Description
                     Text(
-                      'Product description goes here', // Or use product['description'] if available
+                      product['description'] ?? 'No description available',
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 14,
