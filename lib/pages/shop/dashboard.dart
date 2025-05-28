@@ -6,6 +6,7 @@ import 'package:pet_smart/pages/cart.dart';
 import 'package:pet_smart/components/search_service.dart';
 import 'package:pet_smart/pages/view_all_products.dart';
 import 'package:pet_smart/services/product_service.dart';
+import 'package:pet_smart/utils/currency_formatter.dart';
 
 // Color constants matching app design patterns
 const Color primaryBlue = Color(0xFF233A63);   // Main primary color
@@ -78,6 +79,7 @@ class _DashboardShopScreenState extends State<DashboardShopScreen> {
     try {
       setState(() {
         isLoadingTopSelling = true;
+        errorMessage = null;
       });
 
       final products = await _productService.getTopSellingProducts(limit: 2);
@@ -87,10 +89,18 @@ class _DashboardShopScreenState extends State<DashboardShopScreen> {
         topSellingItems = products;
         isLoadingTopSelling = false;
       });
+
+      // Debug: Print to see if we're getting real data or mock data
+      print('Top Selling Products loaded: ${products.length} items');
+      if (products.isNotEmpty) {
+        print('First product: ${products[0]['title']} - Total sold: ${products[0]['total_sold']}');
+      }
     } catch (e) {
+      print('Error loading top selling products: $e');
       if (!mounted) return;
       setState(() {
         isLoadingTopSelling = false;
+        errorMessage = 'Failed to load top selling products. Please try again.';
       });
     }
   }
@@ -1040,7 +1050,7 @@ class _ProductCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     // Price
                     Text(
-                      '\$${price.toStringAsFixed(2)}',
+                      CurrencyFormatter.formatPeso(price),
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,

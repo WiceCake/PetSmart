@@ -4,6 +4,7 @@ import 'package:pet_smart/pages/cart.dart'; // Import the CartPage
 import 'package:pet_smart/components/cart_service.dart';
 import 'package:pet_smart/pages/payment.dart'; // Import the PaymentPage
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/utils/currency_formatter.dart';
 
 // Add these color constants at the top of the file
 const Color primaryRed = Color(0xFFE57373);    // Light coral red
@@ -28,12 +29,14 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   bool _isFavorite = false;
   bool _showReviewInput = false;
   int _rating = 0; // Add this variable for the review rating
+  int _selectedQuantity = 1; // Add quantity selection
+  bool _isAddingToCart = false; // Add loading state for cart operations
 
   // Mock data for product images
   late List<String> productImages;
   late Map<String, dynamic>? product;
   bool isLoading = true;
-  
+
   // Add state for top selling/order items
   List<Map<String, dynamic>> topSellingItems = [];
   bool isLoadingTopSelling = false;
@@ -105,13 +108,13 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     {
       'name': 'Premium Dog Food',
       'image': 'assets/food1.png',
-      'price': '\$24.99',
+      'price': '₱1,249.50', // Converted from $24.99
       'rating': 4.5,
     },
     {
       'name': 'Cat Treats',
       'image': 'assets/food2.png',
-      'price': '\$12.99',
+      'price': '₱649.50', // Converted from $12.99
       'rating': 4.8,
     },
   ];
@@ -279,8 +282,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                           Text(
                             product?['price'] != null
                                 ? (product!['price'] is num
-                                    ? '\$${product!['price'].toStringAsFixed(2)}'
-                                    : '\$${product!['price'].toString()}')
+                                    ? CurrencyFormatter.formatPeso(product!['price'])
+                                    : CurrencyFormatter.formatPeso(product!['price'].toString()))
                                 : 'N/A',
                             style: TextStyle(
                               fontSize: 20,
@@ -337,6 +340,62 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                             style: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      // Quantity Selector
+                      Row(
+                        children: [
+                          const Text(
+                            'Quantity:',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey[300]!),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  onPressed: _selectedQuantity > 1
+                                      ? () {
+                                          setState(() {
+                                            _selectedQuantity--;
+                                          });
+                                        }
+                                      : null,
+                                  icon: const Icon(Icons.remove),
+                                  iconSize: 20,
+                                ),
+                                Container(
+                                  constraints: const BoxConstraints(minWidth: 40),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    _selectedQuantity.toString(),
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedQuantity++;
+                                    });
+                                  },
+                                  icon: const Icon(Icons.add),
+                                  iconSize: 20,
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -580,7 +639,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        product['price'] != null ? '\$${product['price']}' : 'N/A',
+                                        product['price'] != null ? CurrencyFormatter.formatPeso(product['price']) : 'N/A',
                                         style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w500, fontSize: 14),
                                       ),
                                       const SizedBox(height: 4),
@@ -622,34 +681,86 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        // Add item to cart service
-                        CartService().addItem({
-                          'id': product?['id'] ?? DateTime.now().toString(), // Temporary ID
-                          'name': product?['name'],
-                          'image': product?['image'],
-                          'price': product?['price'] ?? '\$24.99',
+                      onPressed: _isAddingToCart ? null : () async {
+                        setState(() {
+                          _isAddingToCart = true;
                         });
-                        
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Added to cart!'),
-                            action: SnackBarAction(
-                              label: 'View Cart',
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const CartPage(showBackButton: true),
+
+                        try {
+                          // Prepare product data for cart
+                          final productData = {
+                            'id': product?['id']?.toString() ?? DateTime.now().toString(),
+                            'name': product?['title'] ?? product?['name'] ?? 'Unknown Product',
+                            'title': product?['title'] ?? product?['name'] ?? 'Unknown Product',
+                            'image': productImages.isNotEmpty ? productImages.first : 'assets/placeholder.png',
+                            'price': product?['price'] ?? 0.0,
+                          };
+
+                          // Add to cart with selected quantity
+                          final success = await CartService().addItem(
+                            productData,
+                            quantity: _selectedQuantity,
+                          );
+
+                          if (success) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Added $_selectedQuantity item(s) to cart!'),
+                                  backgroundColor: Colors.green,
+                                  action: SnackBarAction(
+                                    label: 'View Cart',
+                                    textColor: Colors.white,
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => const CartPage(showBackButton: true),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                );
-                              },
-                            ),
-                          ),
-                        );
+                                ),
+                              );
+                            }
+                          } else {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Failed to add item to cart. Please try again.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error: ${e.toString()}'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        } finally {
+                          if (mounted) {
+                            setState(() {
+                              _isAddingToCart = false;
+                            });
+                          }
+                        }
                       },
-                      icon: const Icon(Icons.shopping_cart_outlined),
-                      label: const Text('Add to Cart'),
+                      icon: _isAddingToCart
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(primaryBlue),
+                              ),
+                            )
+                          : const Icon(Icons.shopping_cart_outlined),
+                      label: Text(_isAddingToCart ? 'Adding...' : 'Add to Cart'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: primaryBlue,
@@ -669,11 +780,12 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                           MaterialPageRoute(
                             builder: (context) => PaymentPage(
                               directPurchaseItem: {
-                                'id': product?['id'] ?? DateTime.now().toString(),
-                                'name': product?['name'],
-                                'image': product?['image'],
-                                'price': product?['price'] ?? '\$24.99',
-                                'quantity': 1,
+                                'id': product?['id']?.toString() ?? DateTime.now().toString(),
+                                'name': product?['title'] ?? product?['name'] ?? 'Unknown Product',
+                                'title': product?['title'] ?? product?['name'] ?? 'Unknown Product',
+                                'image': productImages.isNotEmpty ? productImages.first : 'assets/placeholder.png',
+                                'price': product?['price'] ?? 0.0,
+                                'quantity': _selectedQuantity,
                               },
                             ),
                           ),
@@ -755,11 +867,11 @@ class _ReviewCard extends StatelessWidget {
                       children: [
                         ...List.generate(5, (index) {
                           return Icon(
-                            index < review['rating'] 
+                            index < review['rating']
                                 ? Icons.star_rounded
                                 : Icons.star_outline_rounded,
                             size: 16,
-                            color: index < review['rating'] 
+                            color: index < review['rating']
                                 ? Colors.amber[700]
                                 : Colors.grey[400],
                           );
@@ -806,8 +918,7 @@ class _SuggestedProductCard extends StatelessWidget {
     double priceValue = 0.0;
     if (product['price'] is String) {
       try {
-        priceValue = double.parse(
-            (product['price'] as String).replaceAll(r'$', ''));
+        priceValue = CurrencyFormatter.parsePeso(product['price'] as String);
       } catch (e) {
         // Handle parsing error, e.g., log or use a default
         priceValue = 0.0;
@@ -934,7 +1045,7 @@ class _SuggestedProductCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 // Price
                 Text(
-                  '\$${priceValue.toStringAsFixed(2)}',
+                  CurrencyFormatter.formatPeso(priceValue),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,

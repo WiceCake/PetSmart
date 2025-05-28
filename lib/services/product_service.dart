@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/utils/currency_formatter.dart';
 
 class ProductService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -55,32 +56,65 @@ class ProductService {
   /// Falls back to featured products if no purchase data exists
   Future<List<Map<String, dynamic>>> getTopSellingProducts({int limit = 8}) async {
     try {
-      // Try to get products with purchase data (if orders table exists)
-      final response = await _supabase
-          .from('products')
-          .select('*, product_images(*), orders(quantity)')
-          .order('created_at', ascending: false)
-          .limit(limit);
+      print('ProductService: Attempting to load top selling products...');
 
-      List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(response);
+      // First, try to get products with order_items data for accurate sales tracking
+      List<Map<String, dynamic>> products;
 
-      // Calculate total sold for each product
-      for (var product in products) {
-        int totalSold = 0;
-        if (product['orders'] != null) {
-          for (var order in product['orders']) {
-            totalSold += (order['quantity'] as int? ?? 0);
+      try {
+        print('ProductService: Trying to get products with order_items data...');
+        // Try to get products with sales data from order_items
+        final response = await _supabase
+            .from('products')
+            .select('*, product_images(*), order_items(quantity)')
+            .order('created_at', ascending: false)
+            .limit(limit * 2); // Get more to sort by sales
+
+        products = List<Map<String, dynamic>>.from(response);
+        print('ProductService: Got ${products.length} products with order_items');
+
+        // Calculate total sold for each product from order_items
+        for (var product in products) {
+          int totalSold = 0;
+          if (product['order_items'] != null) {
+            for (var orderItem in product['order_items']) {
+              totalSold += (orderItem['quantity'] as int? ?? 0);
+            }
           }
+          product['total_sold'] = totalSold;
         }
-        product['total_sold'] = totalSold;
-      }
 
-      // Sort by total sold (descending)
-      products.sort((a, b) => (b['total_sold'] as int).compareTo(a['total_sold'] as int));
+        // Sort by total sold (descending) and take the top sellers
+        products.sort((a, b) => (b['total_sold'] as int).compareTo(a['total_sold'] as int));
+        products = products.take(limit).toList();
+        print('ProductService: Using real products with sales data');
+
+      } catch (e) {
+        print('ProductService: Order_items join failed: $e');
+        print('ProductService: Falling back to regular products...');
+
+        // If order_items join fails, just get regular products and simulate top selling
+        final response = await _supabase
+            .from('products')
+            .select('*, product_images(*)')
+            .order('created_at', ascending: false)
+            .limit(limit);
+
+        products = List<Map<String, dynamic>>.from(response);
+        print('ProductService: Got ${products.length} regular products');
+
+        // Simulate sales data for demonstration (you can remove this when you have real sales data)
+        for (int i = 0; i < products.length; i++) {
+          products[i]['total_sold'] = (limit - i) * 50; // Simulate decreasing sales
+        }
+        print('ProductService: Using real products with simulated sales data');
+      }
 
       return _processProductImages(products);
     } catch (e) {
-      // Fallback to featured products or mock data
+      print('ProductService: All database queries failed: $e');
+      print('ProductService: Falling back to mock data');
+      // Fallback to mock data if database doesn't exist yet
       return _getMockTopSelling();
     }
   }
@@ -155,16 +189,11 @@ class ProductService {
     }
   }
 
-  /// Process product images to extract URLs and fix field mappings
+  /// Process product images to extract URLs
   List<Map<String, dynamic>> _processProductImages(List<Map<String, dynamic>> products) {
     for (var product in products) {
-      // Fix field mapping: database uses 'title' but UI expects 'name'
-      if (product['title'] != null && product['name'] == null) {
-        product['name'] = product['title'];
-      }
-
       // Ensure required fields have defaults
-      product['name'] = product['name'] ?? product['title'] ?? 'Unknown Product';
+      product['title'] = product['title'] ?? 'Unknown Product';
       product['description'] = product['description'] ?? 'No description available';
       product['price'] = (product['price'] is num) ? (product['price'] as num).toDouble() : 0.0;
       product['rating'] = product['rating'] ?? 4.0; // Default rating
@@ -199,7 +228,7 @@ class ProductService {
         'id': '1',
         'title': 'Tuna Delight',
         'description': 'Premium tuna cat food',
-        'price': 24.99,
+        'price': 1249.50, // Converted from $24.99 to ₱1,249.50
         'image': 'assets/new1.png',
         'image_urls': ['assets/new1.png'],
         'rating': 4.8,
@@ -210,7 +239,7 @@ class ProductService {
         'id': '2',
         'title': 'Chicken Feast',
         'description': 'Delicious chicken meal for dogs',
-        'price': 29.99,
+        'price': 1499.50, // Converted from $29.99 to ₱1,499.50
         'image': 'assets/new2.png',
         'image_urls': ['assets/new2.png'],
         'rating': 4.5,
@@ -221,7 +250,7 @@ class ProductService {
         'id': '3',
         'title': 'Salmon Bites',
         'description': 'Healthy salmon treats',
-        'price': 19.99,
+        'price': 999.50, // Converted from $19.99 to ₱999.50
         'image': 'assets/new3.png',
         'image_urls': ['assets/new3.png'],
         'rating': 4.2,
@@ -232,7 +261,7 @@ class ProductService {
         'id': '4',
         'title': 'Beef & Veggies',
         'description': 'Nutritious beef and vegetable mix',
-        'price': 22.99,
+        'price': 1149.50, // Converted from $22.99 to ₱1,149.50
         'image': 'assets/new4.png',
         'image_urls': ['assets/new4.png'],
         'rating': 4.7,
@@ -249,7 +278,7 @@ class ProductService {
         'id': '2',
         'title': 'Chicken Feast',
         'description': 'Delicious chicken meal for dogs',
-        'price': 29.99,
+        'price': 1499.50, // Converted from $29.99 to ₱1,499.50
         'image': 'assets/new2.png',
         'image_urls': ['assets/new2.png'],
         'rating': 4.5,
@@ -260,7 +289,7 @@ class ProductService {
         'id': '4',
         'title': 'Beef & Veggies',
         'description': 'Nutritious beef and vegetable mix',
-        'price': 22.99,
+        'price': 1149.50, // Converted from $22.99 to ₱1,149.50
         'image': 'assets/new4.png',
         'image_urls': ['assets/new4.png'],
         'rating': 4.7,
@@ -271,7 +300,7 @@ class ProductService {
         'id': '1',
         'title': 'Tuna Delight',
         'description': 'Premium tuna cat food',
-        'price': 24.99,
+        'price': 1249.50, // Converted from $24.99 to ₱1,249.50
         'image': 'assets/new1.png',
         'image_urls': ['assets/new1.png'],
         'rating': 4.8,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pet_smart/components/cart_service.dart';
 import 'package:pet_smart/pages/shop/dashboard.dart';
 import 'package:pet_smart/pages/payment.dart'; // Add import for payment page
+import 'package:pet_smart/utils/currency_formatter.dart';
 
 // Add color constants
 const Color primaryRed = Color(0xFFE57373);    // Light coral red
@@ -48,11 +49,65 @@ class CartPage extends StatefulWidget {
 class _CartPageState extends State<CartPage> {
   final CartService _cartService = CartService();
   Set<int> selectedItems = {};
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCart();
+  }
+
+  Future<void> _initializeCart() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    await _cartService.initializeCart();
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        // Select all items by default
+        selectedItems = Set.from(List.generate(_cartService.items.length, (index) => index));
+      });
+    }
+  }
+
+  Future<void> _refreshCart() async {
+    await _cartService.initializeCart();
+    if (mounted) {
+      setState(() {
+        // Update selected items to match current cart
+        selectedItems.removeWhere((index) => index >= _cartService.items.length);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        appBar: AppBar(
+          title: const Text('My Cart'),
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          leading: widget.showBackButton ? IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => Navigator.pop(context),
+          ) : null,
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(primaryBlue),
+          ),
+        ),
+      );
+    }
+
     final cartItems = _cartService.items;
-    
+
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
@@ -67,44 +122,128 @@ class _CartPageState extends State<CartPage> {
       ),
       body: cartItems.isEmpty
           ? _buildEmptyCart()
-          : Column(
-              children: [
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: cartItems.length,
-                    itemBuilder: (context, index) {
-                      final item = cartItems[index];
-                      return _CartItemCard(
-                        item: item,
-                        index: index,
-                        isSelected: selectedItems.contains(index),
-                        onSelect: (selected) {
-                          setState(() {
-                            if (selected) {
-                              selectedItems.add(index);
-                            } else {
-                              selectedItems.remove(index);
-                            }
-                          });
-                        },
-                        onQuantityChanged: (quantity) {
-                          setState(() {
-                            _cartService.updateQuantity(index, quantity);
-                          });
-                        },
-                        onRemove: () {
-                          setState(() {
-                            _cartService.removeItem(index);
-                            selectedItems.remove(index);
-                          });
-                        },
-                      );
-                    },
+          : RefreshIndicator(
+              onRefresh: _refreshCart,
+              color: primaryBlue,
+              child: Column(
+                children: [
+                  // Select All / Deselect All Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border(
+                        bottom: BorderSide(color: Colors.grey[200]!),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          value: selectedItems.length == cartItems.length && cartItems.isNotEmpty,
+                          tristate: true,
+                          onChanged: (value) {
+                            setState(() {
+                              if (value == true) {
+                                selectedItems = Set.from(List.generate(cartItems.length, (index) => index));
+                              } else {
+                                selectedItems.clear();
+                              }
+                            });
+                          },
+                          activeColor: primaryBlue,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          selectedItems.length == cartItems.length && cartItems.isNotEmpty
+                              ? 'Deselect All'
+                              : 'Select All',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${cartItems.length} item${cartItems.length != 1 ? 's' : ''}',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                if (selectedItems.isNotEmpty) _buildCheckoutBar(),
-              ],
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: cartItems.length,
+                      itemBuilder: (context, index) {
+                        final item = cartItems[index];
+                        return _CartItemCard(
+                          item: item,
+                          index: index,
+                          isSelected: selectedItems.contains(index),
+                          onSelect: (selected) {
+                            setState(() {
+                              if (selected) {
+                                selectedItems.add(index);
+                              } else {
+                                selectedItems.remove(index);
+                              }
+                            });
+                          },
+                          onQuantityChanged: (quantity) async {
+                            final success = await _cartService.updateQuantity(index, quantity);
+                            if (success && mounted) {
+                              setState(() {});
+                            } else if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Failed to update quantity'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          onRemove: () async {
+                            final success = await _cartService.removeItem(index);
+                            if (success && mounted) {
+                              setState(() {
+                                selectedItems.remove(index);
+                                // Adjust selected indices after removal
+                                final newSelectedItems = <int>{};
+                                for (int selectedIndex in selectedItems) {
+                                  if (selectedIndex > index) {
+                                    newSelectedItems.add(selectedIndex - 1);
+                                  } else if (selectedIndex < index) {
+                                    newSelectedItems.add(selectedIndex);
+                                  }
+                                }
+                                selectedItems = newSelectedItems;
+                              });
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Item removed from cart'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } else if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Failed to remove item'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  if (selectedItems.isNotEmpty) _buildCheckoutBar(),
+                ],
+              ),
             ),
     );
   }
@@ -206,7 +345,7 @@ class _CartPageState extends State<CartPage> {
                   ),
                 ),
                 Text(
-                  '\$${_cartService.getTotal().toStringAsFixed(2)}',
+                  CurrencyFormatter.formatPeso(_cartService.getSelectedTotal(selectedItems)),
                   style: TextStyle(
                     color: primaryBlue,
                     fontSize: 24,
@@ -316,7 +455,7 @@ class _CartItemCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8), // Reduced space
- 
+
             // 2. Thumbnail
             Container(
               width: 70,
@@ -327,19 +466,42 @@ class _CartItemCard extends StatelessWidget {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.asset(
-                  item['image'],
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Icon(
-                    Icons.broken_image_outlined,
-                    size: 30,
-                    color: Colors.grey[500],
-                  ),
-                ),
+                child: item['image'].toString().startsWith('http')
+                    ? Image.network(
+                        item['image'],
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          Icons.broken_image_outlined,
+                          size: 30,
+                          color: Colors.grey[500],
+                        ),
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
+                              strokeWidth: 2,
+                              valueColor: const AlwaysStoppedAnimation<Color>(primaryBlue),
+                            ),
+                          );
+                        },
+                      )
+                    : Image.asset(
+                        item['image'],
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          Icons.broken_image_outlined,
+                          size: 30,
+                          color: Colors.grey[500],
+                        ),
+                      ),
               ),
             ),
             const SizedBox(width: 10), // Reduced space
- 
+
             // 3. Title & 4. Price
             Expanded(
               child: Column(
@@ -347,7 +509,7 @@ class _CartItemCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    item['name'],
+                    item['name'] ?? item['title'] ?? 'Unknown Product',
                     style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.normal,
@@ -360,7 +522,7 @@ class _CartItemCard extends StatelessWidget {
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      '\$${(item['price'] as num).toStringAsFixed(2)}',
+                      CurrencyFormatter.formatPeso(item['price']),
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -374,7 +536,7 @@ class _CartItemCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8), // Reduced space before spinner
- 
+
             // 5. Qty (Spinner)
             Container(
               decoration: BoxDecoration(

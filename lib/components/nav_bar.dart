@@ -5,6 +5,7 @@ import 'package:pet_smart/pages/cart.dart';
 import 'package:pet_smart/pages/dashboard.dart';
 import 'package:pet_smart/pages/settings.dart';
 import 'package:pet_smart/pages/messages/direct_chat_admin.dart';
+import 'package:pet_smart/components/cart_service.dart';
 
 const Color primaryRed = Color(0xFFE57373);    // Light coral red
 const Color primaryBlue = Color(0xFF3F51B5);   // PetSmart blue
@@ -36,6 +37,16 @@ class _BottomNavigationState extends State<BottomNavigation> {
   @override
   void initState() {
     super.initState();
+    // Initialize cart service when navigation is created
+    _initializeCartService();
+  }
+
+  Future<void> _initializeCartService() async {
+    try {
+      await CartService().initializeCart();
+    } catch (e) {
+      debugPrint('Failed to initialize cart service: $e');
+    }
   }
 
   // Update the widget options list

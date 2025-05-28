@@ -13,7 +13,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  bool rememberMe = false;
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _error;
@@ -151,47 +150,243 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _forgotPassword() async {
-    if (emailController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your email address first.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+    // Show forgot password dialog
+    _showForgotPasswordDialog();
+  }
+
+  void _showForgotPasswordDialog() {
+    final TextEditingController forgotEmailController = TextEditingController();
+    String? dialogError;
+    bool isDialogLoading = false;
+    final scaffoldContext = context; // Store context reference
+
+    // Pre-fill with current email if valid
+    if (emailController.text.trim().isNotEmpty &&
+        RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(emailController.text.trim())) {
+      forgotEmailController.text = emailController.text.trim();
     }
 
-    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(emailController.text.trim())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid email address.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  Icon(Icons.lock_reset, color: Colors.blue[600], size: 24),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Reset Password',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF233A63),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Enter your email address and we\'ll send you a link to reset your password.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF2F2F2),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: TextField(
+                      controller: forgotEmailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        hintText: 'Enter your email address',
+                        prefixIcon: Icon(Icons.email_outlined, color: Color(0xFF233A63)),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                      ),
+                    ),
+                  ),
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              dialogError!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isDialogLoading ? null : () {
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE57373),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  onPressed: isDialogLoading ? null : () async {
+                    final email = forgotEmailController.text.trim();
 
-    try {
-      final supabase = Supabase.instance.client;
-      await supabase.auth.resetPasswordForEmail(emailController.text.trim());
+                    // Validate email
+                    if (email.isEmpty) {
+                      setDialogState(() {
+                        dialogError = 'Please enter your email address.';
+                      });
+                      return;
+                    }
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset email sent! Check your inbox.'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 4),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to send reset email. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+                      setDialogState(() {
+                        dialogError = 'Please enter a valid email address.';
+                      });
+                      return;
+                    }
+
+                    setDialogState(() {
+                      isDialogLoading = true;
+                      dialogError = null;
+                    });
+
+                    try {
+                      // Check if Supabase is properly configured
+                      if (!AppConfig.isConfigured()) {
+                        setDialogState(() {
+                          isDialogLoading = false;
+                          dialogError = 'App configuration error. Please contact support.';
+                        });
+                        return;
+                      }
+
+                      final supabase = Supabase.instance.client;
+                      await supabase.auth.resetPasswordForEmail(
+                        email,
+                        redirectTo: 'https://your-app.com/reset-password', // You can customize this
+                      );
+
+                      // Close dialog and show success message
+                      Navigator.of(dialogContext).pop();
+
+                      // Use addPostFrameCallback to ensure the dialog is closed before showing snackbar
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Password reset email sent to $email. Check your inbox and spam folder.',
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              backgroundColor: Colors.green,
+                              duration: const Duration(seconds: 5),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          );
+                        }
+                      });
+                    } catch (e) {
+                      setDialogState(() {
+                        isDialogLoading = false;
+
+                        // Handle specific errors
+                        String errorMessage = e.toString().toLowerCase();
+                        if (errorMessage.contains('user not found') ||
+                            errorMessage.contains('email not found')) {
+                          dialogError = 'No account found with this email address.';
+                        } else if (errorMessage.contains('too many requests')) {
+                          dialogError = 'Too many requests. Please try again later.';
+                        } else if (errorMessage.contains('network') ||
+                                   errorMessage.contains('connection') ||
+                                   errorMessage.contains('timeout')) {
+                          dialogError = 'Network error. Please check your internet connection.';
+                        } else {
+                          dialogError = 'Failed to send reset email. Please try again.';
+                        }
+                      });
+                    }
+                  },
+                  child: isDialogLoading
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'Send Reset Link',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -363,38 +558,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  // Remember Me & Forgot Password
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: rememberMe,
-                        activeColor: accentColor,
-                        onChanged: (value) {
-                          setState(() {
-                            rememberMe = value ?? false;
-                          });
-                        },
-                      ),
-                      const Text(
-                        "Remember Me",
+                  const SizedBox(height: 16),
+                  // Forgot Password
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _forgotPassword,
+                      child: const Text(
+                        "Forgot Password?",
                         style: TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w500,
+                          color: primaryColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
                         ),
                       ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: _forgotPassword,
-                        child: const Text(
-                          "Forgot Password?",
-                          style: TextStyle(
-                            color: primaryColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),

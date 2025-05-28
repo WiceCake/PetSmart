@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pet_smart/pages/setting/add_address.dart';
 import 'package:pet_smart/pages/setting/edit_address.dart';
+import 'package:pet_smart/services/address_service.dart';
 
 // PetSmart brand colors
 const primaryBlue = Color(0xFF233A63);
@@ -17,24 +18,11 @@ class AddressBookPage extends StatefulWidget {
 class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProviderStateMixin {
   // Animation controller for list items
   late AnimationController _animationController;
+  final AddressService _addressService = AddressService();
 
-  // Sample addresses - in a real app, this would come from a database or API
-  final List<Map<String, dynamic>> _addresses = [
-    {
-      'id': '1',
-      'name': 'Home',
-      'address': '123 Main Street, Quezon City, Philippines',
-      'isDefault': true,
-      'phoneNumber': '+63 9123456789',
-    },
-    {
-      'id': '2',
-      'name': 'Work',
-      'address': '456 Office Building, Makati City, Philippines',
-      'isDefault': false,
-      'phoneNumber': '+63 9876543210',
-    },
-  ];
+  // Addresses loaded from database
+  List<Map<String, dynamic>> _addresses = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -43,7 +31,38 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    _animationController.forward();
+    _loadAddresses();
+  }
+
+  Future<void> _loadAddresses() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final dbAddresses = await _addressService.getUserAddresses();
+      final uiAddresses = dbAddresses.map((addr) => AddressService.toUIFormat(addr)).toList();
+
+      if (mounted) {
+        setState(() {
+          _addresses = uiAddresses;
+          _isLoading = false;
+        });
+        _animationController.forward();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading addresses: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -74,9 +93,15 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
         ),
       ),
       body: SafeArea(
-        child: _addresses.isEmpty
-            ? _buildEmptyState()
-            : _buildAddressList(),
+        child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(primaryBlue),
+                ),
+              )
+            : _addresses.isEmpty
+                ? _buildEmptyState()
+                : _buildAddressList(),
       ),
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 24, right: 24),
@@ -92,19 +117,35 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
                 MaterialPageRoute(builder: (context) => const AddAddressPage()),
               );
               if (result != null) {
-                setState(() {
-                  if (result['isDefault']) {
-                    for (var addr in _addresses) {
-                      addr['isDefault'] = false;
-                    }
+                // Save to database
+                final savedAddress = await _addressService.addAddress(
+                  name: result['name'],
+                  address: result['address'],
+                  phoneNumber: result['phoneNumber'],
+                  isDefault: result['isDefault'] ?? false,
+                );
+
+                if (savedAddress != null) {
+                  // Reload addresses from database
+                  _loadAddresses();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Address added successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
                   }
-                  _addresses.add({
-                    'id': DateTime.now().millisecondsSinceEpoch.toString(),
-                    ...result,
-                  });
-                });
-                _animationController.reset();
-                _animationController.forward();
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Failed to add address'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
               }
             },
             tooltip: 'Add Address',
@@ -156,19 +197,27 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
                 MaterialPageRoute(builder: (context) => const AddAddressPage()),
               );
               if (result != null) {
-                setState(() {
-                  if (result['isDefault']) {
-                    for (var addr in _addresses) {
-                      addr['isDefault'] = false;
-                    }
+                // Save to database
+                final savedAddress = await _addressService.addAddress(
+                  name: result['name'],
+                  address: result['address'],
+                  phoneNumber: result['phoneNumber'],
+                  isDefault: result['isDefault'] ?? false,
+                );
+
+                if (savedAddress != null) {
+                  // Reload addresses from database
+                  _loadAddresses();
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Failed to add address'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
                   }
-                  _addresses.add({
-                    'id': DateTime.now().millisecondsSinceEpoch.toString(),
-                    ...result,
-                  });
-                });
-                _animationController.reset();
-                _animationController.forward();
+                }
               }
             },
             style: ElevatedButton.styleFrom(
@@ -267,24 +316,59 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
                   );
                   if (result != null) {
                     if (result['delete'] == true) {
-                      setState(() {
-                        _addresses.removeWhere((addr) => addr['id'] == address['id']);
-                      });
+                      // Delete from database
+                      final success = await _addressService.deleteAddress(address['id']);
+                      if (success) {
+                        _loadAddresses();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Address deleted successfully'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to delete address'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
                     } else {
-                      setState(() {
-                        if (result['isDefault']) {
-                          for (var addr in _addresses) {
-                            addr['isDefault'] = false;
-                          }
+                      // Update in database
+                      final updatedAddress = await _addressService.updateAddress(
+                        addressId: address['id'],
+                        name: result['name'],
+                        address: result['address'],
+                        phoneNumber: result['phoneNumber'],
+                        isDefault: result['isDefault'] ?? false,
+                      );
+
+                      if (updatedAddress != null) {
+                        _loadAddresses();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Address updated successfully'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
                         }
-                        final index = _addresses.indexWhere((addr) => addr['id'] == address['id']);
-                        if (index != -1) {
-                          _addresses[index] = result;
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to update address'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
                         }
-                      });
+                      }
                     }
-                    _animationController.reset();
-                    _animationController.forward();
                   }
                 },
               ),

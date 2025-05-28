@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pet_smart/pages/shop/item_detail.dart';
 import 'package:pet_smart/services/product_service.dart';
+import 'package:pet_smart/utils/currency_formatter.dart';
 
 // Color constants matching app design patterns
 const Color primaryBlue = Color(0xFF233A63);   // Main primary color
@@ -451,7 +452,7 @@ class _ProductCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '\$${(product['price'] ?? 0.0).toStringAsFixed(2)}',
+                    CurrencyFormatter.formatPeso(product['price'] ?? 0.0),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,

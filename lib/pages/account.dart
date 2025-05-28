@@ -7,6 +7,9 @@ import 'package:pet_smart/pages/view_all_products.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'account/all_pets.dart';
 import 'account/pet_details.dart';
+import 'package:pet_smart/pages/account/purchase_history.dart';
+import 'package:pet_smart/services/order_service.dart';
+import 'package:pet_smart/utils/currency_formatter.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -18,6 +21,7 @@ class AccountScreen extends StatefulWidget {
 class _AccountScreenState extends State<AccountScreen> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late ScrollController _scrollController;
+  final OrderService _orderService = OrderService();
 
   // User data state
   Map<String, dynamic> _userData = {};
@@ -26,6 +30,10 @@ class _AccountScreenState extends State<AccountScreen> with SingleTickerProvider
   // Pets data state
   List<Map<String, dynamic>> _userPets = [];
   bool _petsLoading = true;
+
+  // Order stats state
+  Map<String, dynamic> _orderStats = {};
+  bool _statsLoading = true;
 
   // Static constants for better performance
   static const List<Map<String, dynamic>> _recentlyBoughtProducts = [
@@ -70,6 +78,7 @@ class _AccountScreenState extends State<AccountScreen> with SingleTickerProvider
     _controller.forward();
     _loadUserData();
     _loadUserPets();
+    _loadOrderStats();
   }
 
   Future<void> _loadUserData() async {
@@ -175,10 +184,39 @@ class _AccountScreenState extends State<AccountScreen> with SingleTickerProvider
     }
   }
 
+  Future<void> _loadOrderStats() async {
+    if (!mounted) return;
+
+    setState(() {
+      _statsLoading = true;
+    });
+
+    try {
+      final stats = await _orderService.getOrderStats();
+      if (!mounted) return;
+      setState(() {
+        _orderStats = stats;
+        _statsLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _statsLoading = false;
+        _orderStats = {
+          'total_orders': 0,
+          'pending_orders': 0,
+          'completed_orders': 0,
+          'total_spent': 0.0,
+        };
+      });
+    }
+  }
+
   Future<void> _refreshData() async {
     await Future.wait([
       _loadUserData(),
       _loadUserPets(),
+      _loadOrderStats(),
     ]);
   }
 
@@ -342,39 +380,142 @@ class _AccountScreenState extends State<AccountScreen> with SingleTickerProvider
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'My Purchases',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildPurchaseItem(Icons.local_shipping_outlined, 'To Receive'),
-              _buildPurchaseItem(Icons.star_outline, 'To Rate'),
+              const Text(
+                'My Purchases',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PurchaseHistoryPage(),
+                    ),
+                  );
+                },
+                child: const Text('View All'),
+              ),
             ],
           ),
+          const SizedBox(height: 16),
+          _statsLoading
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildPurchaseItem(
+                      Icons.shopping_bag_outlined,
+                      'Total Orders',
+                      _orderStats['total_orders']?.toString() ?? '0',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const PurchaseHistoryPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildPurchaseItem(
+                      Icons.local_shipping_outlined,
+                      'Pending',
+                      _orderStats['pending_orders']?.toString() ?? '0',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const PurchaseHistoryPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildPurchaseItem(
+                      Icons.check_circle_outline,
+                      'Completed',
+                      _orderStats['completed_orders']?.toString() ?? '0',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const PurchaseHistoryPage(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+          if (!_statsLoading && _orderStats['total_spent'] != null && _orderStats['total_spent'] > 0) ...[
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total Spent',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                Text(
+                  CurrencyFormatter.formatPeso(_orderStats['total_spent']),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF233A63),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildPurchaseItem(IconData icon, String label) {
-    return Column(
-      children: [
-        Icon(icon, size: 28, color: Colors.grey[700]),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
+  Widget _buildPurchaseItem(IconData icon, String label, String count, {VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        child: Column(
+          children: [
+            Icon(icon, size: 28, color: Colors.grey[700]),
+            const SizedBox(height: 8),
+            Text(
+              count,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF233A63),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -777,7 +918,7 @@ class _AccountScreenState extends State<AccountScreen> with SingleTickerProvider
                   ),
                 ),
                 Text(
-                  '\$${price.toStringAsFixed(2)}',
+                  CurrencyFormatter.formatPeso(price),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
