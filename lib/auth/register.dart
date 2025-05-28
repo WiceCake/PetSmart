@@ -20,35 +20,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   String? _error;
 
-  Future<bool> _checkEmailExists(String email) async {
-    try {
-      final supabase = Supabase.instance.client;
-
-      // Check if email exists in auth.users table by attempting to sign in with a dummy password
-      // This is a workaround since Supabase doesn't provide a direct way to check email existence
-      try {
-        await supabase.auth.signInWithPassword(email: email, password: 'dummy_password_check');
-        // If we reach here, the email exists but password is wrong
-        return true;
-      } catch (e) {
-        String errorMessage = e.toString().toLowerCase();
-        if (errorMessage.contains('invalid_credentials') || errorMessage.contains('invalid login credentials')) {
-          // Email exists but password is wrong
-          return true;
-        } else if (errorMessage.contains('email not confirmed') || errorMessage.contains('email_not_confirmed')) {
-          // Email exists but not confirmed
-          return true;
-        } else {
-          // Email doesn't exist or other error
-          return false;
-        }
-      }
-    } catch (e) {
-      // If there's any other error, assume email doesn't exist to allow registration attempt
-      return false;
-    }
-  }
-
   Future<void> _register() async {
     setState(() {
       _isLoading = true;
@@ -92,16 +63,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() {
         _isLoading = false;
         _error = "Passwords do not match.";
-      });
-      return;
-    }
-
-    // Check if email already exists
-    final emailExists = await _checkEmailExists(email);
-    if (emailExists) {
-      setState(() {
-        _isLoading = false;
-        _error = "An account with this email already exists. Please try logging in instead.";
       });
       return;
     }
@@ -157,7 +118,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() {
         // Show a more user-friendly error if possible
         String errorMessage = e.toString().toLowerCase();
-        if (errorMessage.contains('email') && errorMessage.contains('already')) {
+        if (errorMessage.contains('user_already_exists') ||
+            errorMessage.contains('email_address_already_in_use') ||
+            (errorMessage.contains('email') && errorMessage.contains('already'))) {
           _error = "An account with this email already exists. Please try logging in instead.";
         } else if (errorMessage.contains('invalid_credentials')) {
           _error = "Invalid email or password format.";
@@ -167,6 +130,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _error = "Network error. Please check your connection and try again.";
         } else if (errorMessage.contains('anonymous_provider_disabled')) {
           _error = "Please enter a valid email and password.";
+        } else if (errorMessage.contains('signup_disabled')) {
+          _error = "Registration is currently disabled. Please contact support.";
         } else {
           _error = "Registration failed. Please try again.";
         }
