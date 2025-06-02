@@ -9,7 +9,6 @@ class LanguagePage extends StatefulWidget {
 
 class _LanguagePageState extends State<LanguagePage> {
   final Map<String, dynamic> _english = {'name': 'English', 'code': 'en', 'nativeName': 'English'};
-  String _selectedLanguageCode = 'en';
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +44,7 @@ class _LanguagePageState extends State<LanguagePage> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
+                  color: Colors.black.withValues(alpha: 0.03),
                   blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),
@@ -71,9 +70,6 @@ class _LanguagePageState extends State<LanguagePage> {
                 size: 22,
               ),
               onTap: () {
-                setState(() {
-                  _selectedLanguageCode = _english['code'];
-                });
                 Navigator.pop(context, _english);
               },
             ),

@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:pet_smart/pages/shop/item_detail.dart';
 import 'package:pet_smart/pages/shop/search_results.dart';
 import 'package:pet_smart/pages/cart.dart';
 import 'package:pet_smart/components/search_service.dart';
-import 'package:pet_smart/pages/view_all_products.dart';
+import 'package:pet_smart/pages/shop/new_arrivals_page.dart';
+import 'package:pet_smart/pages/shop/top_selling_page.dart';
 import 'package:pet_smart/services/product_service.dart';
+import 'package:pet_smart/services/search_history_service.dart';
 import 'package:pet_smart/utils/currency_formatter.dart';
+import 'package:pet_smart/components/optimized_image.dart';
 
 // Color constants matching app design patterns
 const Color primaryBlue = Color(0xFF233A63);   // Main primary color
@@ -91,12 +95,12 @@ class _DashboardShopScreenState extends State<DashboardShopScreen> {
       });
 
       // Debug: Print to see if we're getting real data or mock data
-      print('Top Selling Products loaded: ${products.length} items');
+      debugPrint('Top Selling Products loaded: ${products.length} items');
       if (products.isNotEmpty) {
-        print('First product: ${products[0]['title']} - Total sold: ${products[0]['total_sold']}');
+        debugPrint('First product: ${products[0]['title']} - Total sold: ${products[0]['total_sold']}');
       }
     } catch (e) {
-      print('Error loading top selling products: $e');
+      debugPrint('Error loading top selling products: $e');
       if (!mounted) return;
       setState(() {
         isLoadingTopSelling = false;
@@ -204,6 +208,10 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSuggestions = false;
   List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
+  Timer? _debounceTimer;
+  List<String> _searchHistory = [];
+  List<String> _searchSuggestions = [];
 
   // All products section with lazy loading
   final ProductService _productService = ProductService();
@@ -220,36 +228,88 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
     ..._allProducts,
   ];
 
-  void _onSearchChanged(String query) async {
+  void _onSearchChanged(String query) {
+    // Cancel previous timer
+    _debounceTimer?.cancel();
+
     setState(() {
       if (query.isEmpty) {
         _showSuggestions = false;
         _searchResults = [];
+        _searchSuggestions = [];
+        _isSearching = false;
       } else {
         _showSuggestions = true;
+        _isSearching = true;
       }
     });
 
     if (query.isNotEmpty) {
-      try {
-        // Use ProductService for better search results
-        final ProductService productService = ProductService();
-        final searchResults = await productService.searchProducts(query);
+      // Get search suggestions immediately
+      _loadSearchSuggestions(query);
 
-        if (mounted) {
-          setState(() {
-            _searchResults = searchResults;
-          });
-        }
-      } catch (e) {
-        // Fallback to local search if service fails
-        if (mounted) {
-          setState(() {
-            _searchResults = SearchService.searchProducts(query, _searchableProducts);
-          });
-        }
+      // Debounce search API calls by 500ms
+      _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
+        await _performSearch(query);
+      });
+    }
+  }
+
+  Future<void> _loadSearchSuggestions(String query) async {
+    final suggestions = await SearchHistoryService.getSearchSuggestions(query);
+    if (mounted) {
+      setState(() {
+        _searchSuggestions = suggestions;
+      });
+    }
+  }
+
+  Future<void> _performSearch(String query) async {
+    try {
+      // Use ProductService for better search results
+      final searchResults = await _productService.searchProducts(query);
+
+      if (mounted) {
+        setState(() {
+          _searchResults = searchResults;
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      // Fallback to local search if service fails
+      if (mounted) {
+        setState(() {
+          _searchResults = SearchService.searchProducts(query, _searchableProducts);
+          _isSearching = false;
+        });
       }
     }
+  }
+
+  void _addToSearchHistory(String query) async {
+    if (query.trim().isEmpty) return;
+
+    await SearchHistoryService.addToSearchHistory(query.trim());
+    await _loadSearchHistory();
+  }
+
+  Future<void> _loadSearchHistory() async {
+    final history = await SearchHistoryService.getSearchHistory();
+    if (mounted) {
+      setState(() {
+        _searchHistory = history;
+      });
+    }
+  }
+
+  Future<void> _removeFromSearchHistory(String query) async {
+    await SearchHistoryService.removeFromSearchHistory(query);
+    await _loadSearchHistory();
+  }
+
+  Future<void> _clearSearchHistory() async {
+    await SearchHistoryService.clearSearchHistory();
+    await _loadSearchHistory();
   }
 
   @override
@@ -257,6 +317,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
     super.initState();
     _controller.addListener(_onScroll);
     _loadAllProducts(); // Load initial products
+    _loadSearchHistory(); // Load search history
   }
 
   Future<void> _loadAllProducts() async {
@@ -317,6 +378,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _controller.removeListener(_onScroll);
     _controller.dispose();
     _searchController.dispose();
@@ -326,17 +388,26 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
   Widget _buildSearchSuggestions() {
     return AnimatedOpacity(
       opacity: _showSuggestions ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
       child: _showSuggestions
           ? Container(
-              margin: const EdgeInsets.only(top: 80),
+              margin: const EdgeInsets.only(top: 84),
               width: double.infinity,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.6,
+              ),
               decoration: BoxDecoration(
                 color: Colors.white,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 8,
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
@@ -345,48 +416,190 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Recent Searches
-                  if (_searchController.text.isEmpty) ...[
+                  if (_searchController.text.isEmpty && _searchHistory.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Recent Searches',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              _clearSearchHistory();
+                            },
+                            child: const Text(
+                              'Clear',
+                              style: TextStyle(
+                                color: primaryBlue,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...List.generate(
+                      _searchHistory.take(5).length,
+                      (index) {
+                        final searchTerm = _searchHistory[index];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(
+                            Icons.history,
+                            color: Colors.grey,
+                            size: 20,
+                          ),
+                          title: Text(
+                            searchTerm,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () {
+                              final searchTerm = _searchHistory[index];
+                              _removeFromSearchHistory(searchTerm);
+                            },
+                          ),
+                          onTap: () {
+                            _searchController.text = searchTerm;
+                            _onSearchChanged(searchTerm);
+                          },
+                        );
+                      },
+                    ),
+                  ],
+
+                  // Search Suggestions (when typing)
+                  if (_searchController.text.isNotEmpty && _searchSuggestions.isNotEmpty) ...[
                     const Padding(
-                      padding: EdgeInsets.all(16),
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Text(
-                        'Recent Searches',
+                        'Suggestions',
                         style: TextStyle(
                           color: Colors.grey,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
                         ),
                       ),
                     ),
-                    // Add your recent searches list here
+                    ...List.generate(
+                      _searchSuggestions.take(3).length,
+                      (index) {
+                        final suggestion = _searchSuggestions[index];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(
+                            Icons.search,
+                            color: primaryBlue,
+                            size: 20,
+                          ),
+                          title: Text(
+                            suggestion,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          onTap: () {
+                            _searchController.text = suggestion;
+                            _addToSearchHistory(suggestion);
+                            _performSearch(suggestion);
+                            setState(() {
+                              _showSuggestions = false;
+                            });
+
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => SearchResultsScreen(
+                                  searchQuery: suggestion,
+                                  searchResults: _searchResults,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ],
 
-                  // Search Suggestions
-                  if (_searchController.text.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text(
-                        'Popular Searches',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontWeight: FontWeight.w500,
-                        ),
+                  // Product Results (when searching)
+                  if (_searchController.text.isNotEmpty && _searchResults.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        children: [
+                          const Text(
+                            'Products',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (_isSearching)
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: primaryBlue,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     Container(
                       constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(context).size.height * 0.4,
+                        maxHeight: MediaQuery.of(context).size.height * 0.3,
                       ),
                       child: ListView.builder(
                         shrinkWrap: true,
                         padding: EdgeInsets.zero,
-                        itemCount: _searchResults.length,
+                        itemCount: _searchResults.take(5).length,
                         itemBuilder: (context, index) {
                           final product = _searchResults[index];
                           return ListTile(
-                            leading: const Icon(Icons.search_outlined),
+                            dense: true,
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                color: Colors.grey[200],
+                                child: product['product_images'] != null &&
+                                       (product['product_images'] as List).isNotEmpty
+                                    ? Image.network(
+                                        product['product_images'][0]['image_url'],
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) =>
+                                            const Icon(Icons.image, color: Colors.grey),
+                                      )
+                                    : const Icon(Icons.pets, color: Colors.grey),
+                              ),
+                            ),
                             title: Text(
                               product['title'] ?? product['name'] ?? 'No Title',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            subtitle: Text(
+                              CurrencyFormatter.formatPeso(product['price']?.toDouble() ?? 0.0),
+                              style: const TextStyle(
+                                color: primaryBlue,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
                             ),
                             trailing: const Icon(
                               Icons.north_west,
@@ -395,12 +608,12 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                             ),
                             onTap: () {
                               final productName = product['title'] ?? product['name'] ?? '';
+                              _addToSearchHistory(productName);
                               setState(() {
                                 _searchController.text = productName;
                                 _showSuggestions = false;
                               });
 
-                              // Navigate to search results with current search results
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -417,13 +630,49 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                     ),
                   ],
 
-                  // No Results
-                  if (_searchResults.isEmpty && _searchController.text.isNotEmpty)
+                  // Loading state
+                  if (_isSearching && _searchController.text.isNotEmpty)
                     const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text(
-                        'No results found',
-                        style: TextStyle(color: Colors.grey),
+                      padding: EdgeInsets.all(24),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: primaryBlue,
+                        ),
+                      ),
+                    ),
+
+                  // No Results
+                  if (!_isSearching &&
+                      _searchResults.isEmpty &&
+                      _searchController.text.isNotEmpty &&
+                      _searchSuggestions.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.search_off,
+                            color: Colors.grey[400],
+                            size: 48,
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'No results found',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Try searching for something else',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                 ],
@@ -507,10 +756,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ViewAllProductsPage(
-                            title: "New Arrivals",
-                            products: widget.newArrivals,
-                          ),
+                          builder: (context) => const NewArrivalsPage(),
                         ),
                       );
                     },
@@ -590,10 +836,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ViewAllProductsPage(
-                            title: "Top Selling",
-                            products: widget.topSellingItems,
-                          ),
+                          builder: (context) => const TopSellingPage(),
                         ),
                       );
                     },
@@ -751,62 +994,164 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
             const SizedBox(height: 32),
           ],
         ),
-        // Sticky Search Bar + Top Bar
+        // Enhanced Sticky Search Bar + Top Bar
         AnimatedPositioned(
           duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
           top: _showSearchBar ? 0 : -90,
           left: 0,
           right: 0,
           child: SafeArea(
             child: Container(
-              color: const Color(0xFFF6F7FB),
-              padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.fromLTRB(8, 12, 16, 12),
               child: Row(
                 children: [
-                  Tooltip(
-                    message: 'Back',
+                  // Back Button with better styling
+                  Container(
+                    decoration: BoxDecoration(
+                      color: backgroundColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black),
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: primaryBlue,
+                        size: 20,
+                      ),
                       onPressed: () => Navigator.of(context).maybePop(),
+                      tooltip: 'Back',
                     ),
                   ),
+                  const SizedBox(width: 12),
+
+                  // Enhanced Search Bar
                   Expanded(
-                    child: Material(
-                      elevation: 2,
-                      borderRadius: BorderRadius.circular(24),
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: backgroundColor,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: _showSuggestions
+                              ? primaryBlue.withValues(alpha: 0.3)
+                              : Colors.transparent,
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryBlue.withValues(alpha: 0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
                       child: TextField(
                         controller: _searchController,
                         onChanged: _onSearchChanged,
+                        onTap: () {
+                          setState(() {
+                            _showSuggestions = true;
+                          });
+                        },
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
                         decoration: InputDecoration(
-                          hintText: 'Search for food, toys, etc...',
-                          prefixIcon: const Icon(Icons.search, color: primaryBlue),
+                          hintText: 'Search for food, toys, accessories...',
+                          hintStyle: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          prefixIcon: Container(
+                            padding: const EdgeInsets.all(12),
+                            child: Icon(
+                              Icons.search_rounded,
+                              color: _showSuggestions ? primaryBlue : Colors.grey[600],
+                              size: 22,
+                            ),
+                          ),
                           suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    setState(() {
-                                      _searchController.clear();
-                                      _showSuggestions = false;
-                                      _searchResults = [];
-                                    });
-                                  },
+                              ? Container(
+                                  padding: const EdgeInsets.all(4),
+                                  child: IconButton(
+                                    icon: Icon(
+                                      Icons.clear_rounded,
+                                      color: Colors.grey[600],
+                                      size: 20,
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _searchController.clear();
+                                        _showSuggestions = false;
+                                        _searchResults = [];
+                                        _searchSuggestions = [];
+                                        _isSearching = false;
+                                      });
+                                    },
+                                    tooltip: 'Clear search',
+                                  ),
                                 )
-                              : null,
+                              : _isSearching
+                                  ? Container(
+                                      padding: const EdgeInsets.all(12),
+                                      child: const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: primaryBlue,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
                           filled: true,
-                          fillColor: Colors.white,
+                          fillColor: Colors.transparent,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
                             borderSide: BorderSide.none,
                           ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  Tooltip(
-                    message: 'Cart',
+                  const SizedBox(width: 12),
+
+                  // Cart Button with better styling
+                  Container(
+                    decoration: BoxDecoration(
+                      color: backgroundColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: IconButton(
-                      icon: const Icon(Icons.shopping_cart_outlined, color: Colors.black),
+                      icon: const Icon(
+                        Icons.shopping_cart_outlined,
+                        color: primaryBlue,
+                        size: 22,
+                      ),
                       onPressed: () {
                         Navigator.push(
                           context,
@@ -815,6 +1160,7 @@ class _StickySearchScrollViewState extends State<_StickySearchScrollView> {
                           ),
                         );
                       },
+                      tooltip: 'Shopping Cart',
                     ),
                   ),
                 ],
@@ -1039,7 +1385,7 @@ class _ProductCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '${soldCount}k sold',
+                          '$soldCount sold',
                           style: TextStyle(
                             color: Colors.grey[600],
                             fontSize: 14,
@@ -1091,74 +1437,10 @@ class _ProductCard extends StatelessWidget {
   }
 
   Widget _buildProductImage(String imageUrl) {
-    // Check if it's a network URL or asset path
-    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-      return Image.network(
-        imageUrl,
-        fit: BoxFit.cover,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Container(
-            color: Colors.grey[200],
-            child: Center(
-              child: CircularProgressIndicator(
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                    : null,
-                color: primaryBlue,
-                strokeWidth: 2,
-              ),
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            color: Colors.grey[300],
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image, color: Colors.grey[600], size: 32),
-                const SizedBox(height: 4),
-                Text(
-                  'Image not available',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    } else {
-      // Asset image
-      return Image.asset(
-        imageUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            color: Colors.grey[300],
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image, color: Colors.grey[600], size: 32),
-                const SizedBox(height: 4),
-                Text(
-                  'Image not found',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    }
+    return OptimizedImage.product(
+      imageUrl: imageUrl,
+      borderRadius: BorderRadius.circular(8),
+    );
   }
 
   Color _getBadgeColor(String badge) {

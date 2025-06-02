@@ -112,6 +112,7 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
             backgroundColor: primaryBlue,
             foregroundColor: Colors.white,
             onPressed: () async {
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
               final result = await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const AddAddressPage()),
@@ -128,23 +129,21 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
                 if (savedAddress != null) {
                   // Reload addresses from database
                   _loadAddresses();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Address added successfully'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  }
+                  if (!mounted) return;
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Address added successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
                 } else {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Failed to add address'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
+                  if (!mounted) return;
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Failed to add address'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
               }
             },
@@ -308,6 +307,7 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
                     ? Icon(Icons.check_circle, color: primaryBlue, size: 22)
                     : Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey[400]),
                 onTap: () async {
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
                   final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -320,23 +320,21 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
                       final success = await _addressService.deleteAddress(address['id']);
                       if (success) {
                         _loadAddresses();
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Address deleted successfully'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
+                        if (!mounted) return;
+                        scaffoldMessenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('Address deleted successfully'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
                       } else {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed to delete address'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
+                        if (!mounted) return;
+                        scaffoldMessenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to delete address'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
                       }
                     } else {
                       // Update in database
@@ -350,23 +348,21 @@ class _AddressBookPageState extends State<AddressBookPage> with SingleTickerProv
 
                       if (updatedAddress != null) {
                         _loadAddresses();
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Address updated successfully'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
+                        if (!mounted) return;
+                        scaffoldMessenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('Address updated successfully'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
                       } else {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed to update address'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
+                        if (!mounted) return;
+                        scaffoldMessenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to update address'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
                       }
                     }
                   }

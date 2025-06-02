@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/services/notification_helper.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
 
 class AddPetAccountScreen extends StatefulWidget {
   final String? userName;
@@ -19,7 +21,6 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
   final List<String> genders = ['Male', 'Female'];
   bool _isLoading = false;
   String? _error;
-  String? _success;
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -49,7 +50,6 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
     setState(() {
       _isLoading = true;
       _error = null;
-      _success = null;
     });
 
     final supabase = Supabase.instance.client;
@@ -74,33 +74,39 @@ class _AddPetAccountScreenState extends State<AddPetAccountScreen>
     }
 
     try {
-      await supabase.from('pets').insert({
+      final response = await supabase.from('pets').insert({
         'user_id': user.id,
         'name': petNameController.text.trim(),
         'type': selectedPetType,
         'gender': selectedGender,
         'created_at': DateTime.now().toIso8601String(),
-      });
+      }).select().single();
 
       if (!mounted) return;
 
       setState(() {
         _isLoading = false;
-        _success = 'Pet added successfully!';
       });
 
-      // Show success message and navigate back
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pet added successfully!'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      // Send notification for pet addition
+      try {
+        await NotificationHelper.notifyPetAdded(
+          petId: response['id'],
+          petName: petNameController.text.trim(),
+        );
+      } catch (notificationError) {
+        // Don't fail the pet addition if notification fails
+        debugPrint('Failed to send pet addition notification: $notificationError');
+      }
 
-      // Wait a moment for the SnackBar to show, then navigate back
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (mounted) Navigator.pop(context, true); // Return true to indicate success
+      // Show success message and navigate back
+      if (mounted) {
+        EnhancedToasts.showPetAdded(context, petNameController.text.trim());
+
+        // Wait a moment for the toast to show, then navigate back
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) Navigator.pop(context, true); // Return true to indicate success
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {

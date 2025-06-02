@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
 
 class FeedbackPage extends StatefulWidget {
   const FeedbackPage({super.key});
@@ -8,6 +11,7 @@ class FeedbackPage extends StatefulWidget {
 }
 
 class _FeedbackPageState extends State<FeedbackPage> {
+  final TextEditingController _subjectController = TextEditingController();
   final TextEditingController _feedbackController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   String _selectedCategory = 'App Experience';
@@ -28,6 +32,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
   @override
   void dispose() {
+    _subjectController.dispose();
     _feedbackController.dispose();
     super.dispose();
   }
@@ -38,24 +43,65 @@ class _FeedbackPageState extends State<FeedbackPage> {
         _isSubmitting = true;
       });
 
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      try {
+        final supabase = Supabase.instance.client;
+        final user = supabase.auth.currentUser;
 
-      setState(() {
-        _isSubmitting = false;
-      });
+        if (user == null) {
+          throw Exception('User not logged in');
+        }
 
-      if (!mounted) return;
+        // Submit feedback to Supabase
+        await supabase.from('feedback').insert({
+          'user_id': user.id,
+          'subject': _subjectController.text.trim().isEmpty ? null : _subjectController.text.trim(),
+          'message': _feedbackController.text.trim(),
+          'category': _selectedCategory,
+          'rating': _rating.round(),
+          'status': 'pending',
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Thank you for your feedback!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+        if (mounted) {
+          setState(() {
+            _isSubmitting = false;
+          });
 
-      Navigator.pop(context);
+          // Show success toast
+          EnhancedToasts.showSuccess(
+            context,
+            'Thank you for your feedback! We appreciate your input and will review it soon.',
+            duration: const Duration(seconds: 4),
+          );
+
+          // Clear form
+          _subjectController.clear();
+          _feedbackController.clear();
+          setState(() {
+            _selectedCategory = 'App Experience';
+            _rating = 4.0;
+          });
+
+          // Navigate back after a short delay
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isSubmitting = false;
+          });
+
+          EnhancedToasts.showError(
+            context,
+            'Failed to submit feedback. Please check your connection and try again.',
+            duration: const Duration(seconds: 3),
+          );
+        }
+      }
     }
   }
 
@@ -77,10 +123,10 @@ class _FeedbackPageState extends State<FeedbackPage> {
         ),
         backgroundColor: Colors.white,
         elevation: 0,
-        shadowColor: Colors.grey.withValues(alpha: 0.1),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
+        iconTheme: const IconThemeData(color: Colors.black87),
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
         ),
       ),
       body: SingleChildScrollView(
@@ -109,6 +155,46 @@ class _FeedbackPageState extends State<FeedbackPage> {
               ),
               const SizedBox(height: 24),
 
+              // Subject Field
+              _buildSectionTitle('Subject (Optional)', primaryBlue),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: TextFormField(
+                  controller: _subjectController,
+                  decoration: const InputDecoration(
+                    hintText: 'Brief summary of your feedback...',
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  style: const TextStyle(fontSize: 16),
+                  maxLength: 100,
+                  buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 16, bottom: 8),
+                      child: Text(
+                        '$currentLength/${maxLength ?? 0}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 24),
+
               // Feedback Category
               _buildSectionTitle('Category', primaryBlue),
               const SizedBox(height: 8),
@@ -118,7 +204,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
+                      color: Colors.black.withValues(alpha: 0.03),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -158,7 +244,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
+                      color: Colors.black.withValues(alpha: 0.03),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -215,7 +301,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
+                      color: Colors.black.withValues(alpha: 0.03),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -232,6 +318,9 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your feedback';
+                    }
+                    if (value.trim().length < 10) {
+                      return 'Please provide more detailed feedback (at least 10 characters)';
                     }
                     return null;
                   },
@@ -250,33 +339,74 @@ class _FeedbackPageState extends State<FeedbackPage> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    elevation: 2,
+                    elevation: 3,
+                    shadowColor: primaryBlue.withValues(alpha: 0.3),
                   ),
                   onPressed: _isSubmitting ? null : _submitFeedback,
                   child: _isSubmitting
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Submitting...',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.8),
+                              ),
+                            ),
+                          ],
                         )
                       : const Text(
-                          'SUBMIT FEEDBACK',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          'Submit Feedback',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
                         ),
                 ),
               ),
               const SizedBox(height: 16),
               // Note about response
-              const Center(
-                child: Text(
-                  'We\'ll get back to you as soon as possible',
-                  style: TextStyle(
-                    color: Colors.black45,
-                    fontSize: 14,
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: primaryBlue.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: primaryBlue.withValues(alpha: 0.1),
+                    width: 1,
                   ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: primaryBlue,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Your feedback helps us improve PetSmart. We review all submissions and will respond if needed.',
+                        style: TextStyle(
+                          color: primaryBlue,
+                          fontSize: 14,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),

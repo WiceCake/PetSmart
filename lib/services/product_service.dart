@@ -1,99 +1,106 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:pet_smart/utils/currency_formatter.dart';
 
 class ProductService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  /// Get new arrivals with smart filtering
-  /// Priority: Last 24 hours -> Last 7 days -> All products (newest first)
+  /// Get new arrivals with strict 7-day filtering
+  /// Only shows products created within the last 7 days
   Future<List<Map<String, dynamic>>> getNewArrivals({int limit = 8}) async {
     try {
       final now = DateTime.now();
-      final yesterday = now.subtract(const Duration(days: 1));
       final lastWeek = now.subtract(const Duration(days: 7));
 
-      // First try: Products from last 24 hours
-      var response = await _supabase
+      debugPrint('ProductService: Fetching new arrivals from ${lastWeek.toIso8601String()} to ${now.toIso8601String()}');
+
+      // Get products from last 7 days only
+      final response = await _supabase
           .from('products')
           .select('*, product_images(*)')
-          .gte('created_at', yesterday.toIso8601String())
+          .gte('created_at', lastWeek.toIso8601String())
           .order('created_at', ascending: false)
           .limit(limit);
 
       List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(response);
 
-      // If not enough products from last 24 hours, expand to last 7 days
-      if (products.length < limit) {
-        response = await _supabase
-            .from('products')
-            .select('*, product_images(*)')
-            .gte('created_at', lastWeek.toIso8601String())
-            .order('created_at', ascending: false)
-            .limit(limit);
+      debugPrint('ProductService: Found ${products.length} new arrivals within last 7 days');
 
-        products = List<Map<String, dynamic>>.from(response);
-      }
-
-      // If still not enough, get all products (newest first)
-      if (products.length < limit) {
-        response = await _supabase
-            .from('products')
-            .select('*, product_images(*)')
-            .order('created_at', ascending: false)
-            .limit(limit);
-
-        products = List<Map<String, dynamic>>.from(response);
-      }
-
-      return _processProductImages(products);
+      return await _processProductImages(products);
     } catch (e) {
+      debugPrint('ProductService: Error fetching new arrivals: $e');
       // Return mock data if database doesn't exist yet
       return _getMockNewArrivals();
     }
   }
 
-  /// Get top selling products based on purchase frequency
+  /// Get top selling products based on actual sales from completed orders
   /// Falls back to featured products if no purchase data exists
   Future<List<Map<String, dynamic>>> getTopSellingProducts({int limit = 8}) async {
     try {
-      print('ProductService: Attempting to load top selling products...');
+      debugPrint('ProductService: Attempting to load top selling products...');
 
-      // First, try to get products with order_items data for accurate sales tracking
+      // Get products with sales data from completed orders only
       List<Map<String, dynamic>> products;
 
       try {
-        print('ProductService: Trying to get products with order_items data...');
-        // Try to get products with sales data from order_items
-        final response = await _supabase
+        debugPrint('ProductService: Trying to get products with completed order sales data...');
+
+        // First, get all products with their images
+        final productsResponse = await _supabase
             .from('products')
-            .select('*, product_images(*), order_items(quantity)')
-            .order('created_at', ascending: false)
-            .limit(limit * 2); // Get more to sort by sales
+            .select('*, product_images(*)')
+            .order('created_at', ascending: false);
 
-        products = List<Map<String, dynamic>>.from(response);
-        print('ProductService: Got ${products.length} products with order_items');
+        products = List<Map<String, dynamic>>.from(productsResponse);
+        debugPrint('ProductService: Got ${products.length} products');
 
-        // Calculate total sold for each product from order_items
+        // Calculate sales for each product from completed orders only
         for (var product in products) {
-          int totalSold = 0;
-          if (product['order_items'] != null) {
-            for (var orderItem in product['order_items']) {
-              totalSold += (orderItem['quantity'] as int? ?? 0);
+          try {
+            final salesResponse = await _supabase
+                .from('order_items')
+                .select('''
+                  quantity,
+                  order:order_id!inner (
+                    status
+                  )
+                ''')
+                .eq('product_id', product['id'])
+                .eq('order.status', 'Completed'); // Only count completed orders
+
+            int totalSold = 0;
+            for (var item in salesResponse) {
+              totalSold += (item['quantity'] as int? ?? 0);
             }
+            product['total_sold'] = totalSold;
+
+            debugPrint('ProductService: Product ${product['title']} - Total sold: $totalSold');
+          } catch (e) {
+            debugPrint('ProductService: Error calculating sales for product ${product['id']}: $e');
+            product['total_sold'] = 0;
           }
-          product['total_sold'] = totalSold;
         }
 
         // Sort by total sold (descending) and take the top sellers
         products.sort((a, b) => (b['total_sold'] as int).compareTo(a['total_sold'] as int));
-        products = products.take(limit).toList();
-        print('ProductService: Using real products with sales data');
+
+        // Filter out products with 0 sales, but keep at least some products for display
+        final productsWithSales = products.where((p) => (p['total_sold'] as int) > 0).toList();
+
+        if (productsWithSales.isNotEmpty) {
+          products = productsWithSales.take(limit).toList();
+          debugPrint('ProductService: Using ${products.length} products with real sales data');
+        } else {
+          // If no products have sales, take the newest products
+          products = products.take(limit).toList();
+          debugPrint('ProductService: No sales data found, using newest products');
+        }
 
       } catch (e) {
-        print('ProductService: Order_items join failed: $e');
-        print('ProductService: Falling back to regular products...');
+        debugPrint('ProductService: Sales calculation failed: $e');
+        debugPrint('ProductService: Falling back to regular products...');
 
-        // If order_items join fails, just get regular products and simulate top selling
+        // If sales calculation fails, just get regular products
         final response = await _supabase
             .from('products')
             .select('*, product_images(*)')
@@ -101,19 +108,19 @@ class ProductService {
             .limit(limit);
 
         products = List<Map<String, dynamic>>.from(response);
-        print('ProductService: Got ${products.length} regular products');
+        debugPrint('ProductService: Got ${products.length} regular products');
 
-        // Simulate sales data for demonstration (you can remove this when you have real sales data)
-        for (int i = 0; i < products.length; i++) {
-          products[i]['total_sold'] = (limit - i) * 50; // Simulate decreasing sales
+        // Set total_sold to 0 for all products
+        for (var product in products) {
+          product['total_sold'] = 0;
         }
-        print('ProductService: Using real products with simulated sales data');
+        debugPrint('ProductService: Using real products with zero sales data');
       }
 
-      return _processProductImages(products);
+      return await _processProductImages(products);
     } catch (e) {
-      print('ProductService: All database queries failed: $e');
-      print('ProductService: Falling back to mock data');
+      debugPrint('ProductService: All database queries failed: $e');
+      debugPrint('ProductService: Falling back to mock data');
       // Fallback to mock data if database doesn't exist yet
       return _getMockTopSelling();
     }
@@ -147,7 +154,32 @@ class ProductService {
           .range(offset, offset + limit - 1);
 
       List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(response);
-      return _processProductImages(products);
+
+      // Calculate sales for each product from completed orders only
+      for (var product in products) {
+        try {
+          final salesResponse = await _supabase
+              .from('order_items')
+              .select('''
+                quantity,
+                order:order_id!inner (
+                  status
+                )
+              ''')
+              .eq('product_id', product['id'])
+              .eq('order.status', 'Completed');
+
+          int totalSold = 0;
+          for (var item in salesResponse) {
+            totalSold += (item['quantity'] as int? ?? 0);
+          }
+          product['total_sold'] = totalSold;
+        } catch (e) {
+          product['total_sold'] = 0;
+        }
+      }
+
+      return await _processProductImages(products);
     } catch (e) {
       // Return mock data if database doesn't exist yet
       return _getMockProducts(page: page, limit: limit);
@@ -166,7 +198,32 @@ class ProductService {
           .order('created_at', ascending: false);
 
       List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(response);
-      return _processProductImages(products);
+
+      // Calculate sales for each product from completed orders only
+      for (var product in products) {
+        try {
+          final salesResponse = await _supabase
+              .from('order_items')
+              .select('''
+                quantity,
+                order:order_id!inner (
+                  status
+                )
+              ''')
+              .eq('product_id', product['id'])
+              .eq('order.status', 'Completed');
+
+          int totalSold = 0;
+          for (var item in salesResponse) {
+            totalSold += (item['quantity'] as int? ?? 0);
+          }
+          product['total_sold'] = totalSold;
+        } catch (e) {
+          product['total_sold'] = 0;
+        }
+      }
+
+      return await _processProductImages(products);
     } catch (e) {
       // Fallback to mock search
       return _getMockSearchResults(query);
@@ -182,22 +239,169 @@ class ProductService {
           .eq('id', productId)
           .single();
 
-      return _processProductImages([response]).first;
+      final processedProducts = await _processProductImages([response]);
+      return processedProducts.first;
     } catch (e) {
       // Return mock product if database doesn't exist yet
       return _getMockProductById(productId);
     }
   }
 
-  /// Process product images to extract URLs
-  List<Map<String, dynamic>> _processProductImages(List<Map<String, dynamic>> products) {
+  /// Get all new arrivals for "See All" page (only products from last 7 days)
+  Future<List<Map<String, dynamic>>> getAllNewArrivals({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      final offset = (page - 1) * limit;
+      final now = DateTime.now();
+      final lastWeek = now.subtract(const Duration(days: 7));
+
+      debugPrint('ProductService: Fetching all new arrivals from ${lastWeek.toIso8601String()} (page: $page, limit: $limit)');
+
+      final response = await _supabase
+          .from('products')
+          .select('*, product_images(*)')
+          .gte('created_at', lastWeek.toIso8601String()) // Only last 7 days
+          .order('created_at', ascending: false) // Newest first
+          .range(offset, offset + limit - 1);
+
+      List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(response);
+
+      debugPrint('ProductService: Found ${products.length} new arrivals for page $page');
+
+      // Calculate sales for each product from completed orders only
+      for (var product in products) {
+        try {
+          final salesResponse = await _supabase
+              .from('order_items')
+              .select('''
+                quantity,
+                order:order_id!inner (
+                  status
+                )
+              ''')
+              .eq('product_id', product['id'])
+              .eq('order.status', 'Completed');
+
+          int totalSold = 0;
+          for (var item in salesResponse) {
+            totalSold += (item['quantity'] as int? ?? 0);
+          }
+          product['total_sold'] = totalSold;
+        } catch (e) {
+          product['total_sold'] = 0;
+        }
+      }
+
+      return await _processProductImages(products);
+    } catch (e) {
+      debugPrint('ProductService: Error fetching all new arrivals: $e');
+      return [];
+    }
+  }
+
+  /// Get all top selling products for "See All" page (sorted by sales volume)
+  Future<List<Map<String, dynamic>>> getAllTopSellingProducts({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      debugPrint('ProductService: Fetching all top selling products (page: $page, limit: $limit)');
+
+      // Get all products first
+      final productsResponse = await _supabase
+          .from('products')
+          .select('*, product_images(*)')
+          .order('created_at', ascending: false);
+
+      List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(productsResponse);
+
+      // Calculate sales for each product from completed orders only
+      for (var product in products) {
+        try {
+          final salesResponse = await _supabase
+              .from('order_items')
+              .select('''
+                quantity,
+                order:order_id!inner (
+                  status
+                )
+              ''')
+              .eq('product_id', product['id'])
+              .eq('order.status', 'Completed');
+
+          int totalSold = 0;
+          for (var item in salesResponse) {
+            totalSold += (item['quantity'] as int? ?? 0);
+          }
+          product['total_sold'] = totalSold;
+        } catch (e) {
+          product['total_sold'] = 0;
+        }
+      }
+
+      // Sort by total sold (descending)
+      products.sort((a, b) => (b['total_sold'] as int).compareTo(a['total_sold'] as int));
+
+      // Apply pagination
+      final offset = (page - 1) * limit;
+      final endIndex = offset + limit;
+      if (offset >= products.length) {
+        return [];
+      }
+
+      final paginatedProducts = products.sublist(
+        offset,
+        endIndex > products.length ? products.length : endIndex,
+      );
+
+      return await _processProductImages(paginatedProducts);
+    } catch (e) {
+      debugPrint('ProductService: Error fetching all top selling products: $e');
+      return [];
+    }
+  }
+
+  /// Calculate average rating for a product from reviews
+  Future<double> _calculateAverageRating(String productId) async {
+    try {
+      final response = await _supabase
+          .from('product_reviews')
+          .select('rating')
+          .eq('product_id', productId);
+
+      if (response.isEmpty) {
+        return 0.0; // No reviews yet
+      }
+
+      final ratings = response.map<int>((review) => review['rating'] as int).toList();
+      final average = ratings.reduce((a, b) => a + b) / ratings.length;
+      return double.parse(average.toStringAsFixed(1));
+    } catch (e) {
+      debugPrint('ProductService: Error calculating rating for product $productId: $e');
+      return 0.0;
+    }
+  }
+
+  /// Process product images to extract URLs and calculate real ratings
+  Future<List<Map<String, dynamic>>> _processProductImages(List<Map<String, dynamic>> products) async {
     for (var product in products) {
       // Ensure required fields have defaults
       product['title'] = product['title'] ?? 'Unknown Product';
       product['description'] = product['description'] ?? 'No description available';
       product['price'] = (product['price'] is num) ? (product['price'] as num).toDouble() : 0.0;
-      product['rating'] = product['rating'] ?? 4.0; // Default rating
       product['total_sold'] = product['total_sold'] ?? 0;
+
+      // Calculate real average rating from reviews
+      try {
+        final averageRating = await _calculateAverageRating(product['id']);
+        product['rating'] = averageRating;
+        debugPrint('ProductService: Product ${product['title']} - Average rating: $averageRating');
+      } catch (e) {
+        debugPrint('ProductService: Error calculating rating for ${product['title']}: $e');
+        product['rating'] = 0.0;
+      }
 
       // Process images
       final images = (product['product_images'] as List<dynamic>? ?? []);

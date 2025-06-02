@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:pet_smart/auth/auth.dart';
 import 'package:pet_smart/config/app_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
+
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+
   String? _error;
 
   Future<void> _login() async {
@@ -76,16 +80,14 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (response.user != null && response.session != null) {
-        // Login successful
+        // Login successful - let AuthWrapper handle email verification check
         if (!mounted) return;
 
         // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login successful! Welcome back.'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
+        EnhancedToasts.showSuccess(
+          context,
+          'Login successful! Welcome back.',
+          duration: const Duration(seconds: 2),
         );
 
         // Small delay to ensure session is properly set
@@ -148,6 +150,8 @@ class _LoginScreenState extends State<LoginScreen> {
       });
     }
   }
+
+
 
   Future<void> _forgotPassword() async {
     // Show forgot password dialog
@@ -300,6 +304,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       dialogError = null;
                     });
 
+                    // Store navigator and messenger before async operation
+                    final navigator = Navigator.of(dialogContext);
+                    final messenger = ScaffoldMessenger.of(scaffoldContext);
+
                     try {
                       // Check if Supabase is properly configured
                       if (!AppConfig.isConfigured()) {
@@ -316,36 +324,32 @@ class _LoginScreenState extends State<LoginScreen> {
                         redirectTo: 'https://your-app.com/reset-password', // You can customize this
                       );
 
-                      // Close dialog and show success message
-                      Navigator.of(dialogContext).pop();
+                      // Success - close dialog and show message
+                      navigator.pop();
 
-                      // Use addPostFrameCallback to ensure the dialog is closed before showing snackbar
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                            SnackBar(
-                              content: Row(
-                                children: [
-                                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Password reset email sent to $email. Check your inbox and spam folder.',
-                                      style: const TextStyle(fontWeight: FontWeight.w500),
-                                    ),
-                                  ),
-                                ],
+                      // Show success snackbar
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Password reset email sent to $email. Check your inbox and spam folder.',
+                                  style: const TextStyle(fontWeight: FontWeight.w500),
+                                ),
                               ),
-                              backgroundColor: Colors.green,
-                              duration: const Duration(seconds: 5),
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          );
-                        }
-                      });
+                            ],
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 5),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      );
                     } catch (e) {
                       setDialogState(() {
                         isDialogLoading = false;
@@ -631,55 +635,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  // Divider with text
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Divider(
-                          color: Colors.black12,
-                          thickness: 1,
-                        ),
-                      ),
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 12),
-                        child: const Text(
-                          "or sign in with",
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Colors.black54,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      const Expanded(
-                        child: Divider(
-                          color: Colors.black12,
-                          thickness: 1,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  // Social Icons Row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _SocialIconButton(
-                        asset: 'assets/google-plus.png',
-                        onTap: () {
-                          // TODO: Implement Google login
-                        },
-                      ),
-                      const SizedBox(width: 32),
-                      _SocialIconButton(
-                        asset: 'assets/facebook.png',
-                        onTap: () {
-                          // TODO: Implement Facebook login
-                        },
-                      ),
-                    ],
-                  ),
+
                   const SizedBox(height: 32),
                   // Sign up prompt
                   Row(
@@ -725,75 +681,4 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class _SocialIconButton extends StatefulWidget {
-  final String asset;
-  final VoidCallback onTap;
 
-  const _SocialIconButton({
-    required this.asset,
-    required this.onTap,
-  });
-
-  @override
-  State<_SocialIconButton> createState() => _SocialIconButtonState();
-}
-
-class _SocialIconButtonState extends State<_SocialIconButton> {
-  double _scale = 1.0;
-
-  void _onTapDown(TapDownDetails details) {
-    setState(() => _scale = 0.92);
-  }
-
-  void _onTapUp(TapUpDetails details) {
-    setState(() => _scale = 1.0);
-  }
-
-  void _onTapCancel() {
-    setState(() => _scale = 1.0);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      onTapDown: _onTapDown,
-      onTapUp: _onTapUp,
-      onTapCancel: _onTapCancel,
-      child: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeInOut,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeInOut,
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: Colors.white,
-            border: Border.all(
-              color: Colors.grey.shade200,
-              width: 2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Image.asset(
-              widget.asset,
-              height: 28,
-              width: 28,
-              fit: BoxFit.contain,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:pet_smart/pages/cart.dart'; // Import the CartPage
 import 'package:pet_smart/components/cart_service.dart';
-import 'package:pet_smart/pages/payment.dart'; // Import the PaymentPage
+import 'package:pet_smart/pages/payment.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:pet_smart/utils/currency_formatter.dart';
+import 'package:pet_smart/services/review_service.dart';
+import 'package:pet_smart/components/discount_badge.dart';
+import 'package:pet_smart/services/liked_products_service.dart';
+import 'package:pet_smart/pages/shop/all_reviews.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
 
 // Add these color constants at the top of the file
 const Color primaryRed = Color(0xFFE57373);    // Light coral red
@@ -24,28 +28,92 @@ class ItemDetailScreen extends StatefulWidget {
   State<ItemDetailScreen> createState() => _ItemDetailScreenState();
 }
 
-class _ItemDetailScreenState extends State<ItemDetailScreen> {
+class _ItemDetailScreenState extends State<ItemDetailScreen> with WidgetsBindingObserver, RouteAware {
   int _current = 0;
   bool _isFavorite = false;
   bool _showReviewInput = false;
   int _rating = 0; // Add this variable for the review rating
   int _selectedQuantity = 1; // Add quantity selection
   bool _isAddingToCart = false; // Add loading state for cart operations
+  bool _isLikeLoading = false; // Add loading state for like operations
+  bool _likeStateChanged = false; // Track if like state has changed
 
-  // Mock data for product images
-  late List<String> productImages;
-  late Map<String, dynamic>? product;
+  // Product data
+  List<String> productImages = [];
+  Map<String, dynamic>? product;
   bool isLoading = true;
 
-  // Add state for top selling/order items
-  List<Map<String, dynamic>> topSellingItems = [];
-  bool isLoadingTopSelling = false;
+  // Review data
+  List<Map<String, dynamic>> reviews = [];
+  bool isLoadingReviews = false;
+  double averageRating = 0.0;
+  int totalReviews = 0;
+  bool hasUserReviewed = false;
+  final TextEditingController _reviewController = TextEditingController();
+
+  // Services
+  final LikedProductsService _likedProductsService = LikedProductsService();
+
+  // Related products
+  List<Map<String, dynamic>> relatedProducts = [];
+  bool isLoadingRelatedProducts = false;
+
+  // Route observer for detecting when page becomes visible
+  static final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     fetchProduct();
-    fetchTopSellingItems();
+    // Note: fetchReviews() and _checkLikeStatus() are called after fetchProduct() completes
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
+    _reviewController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Refresh reviews when app comes back to foreground
+      // This helps catch reviews added from other sessions
+      if (product != null) {
+        debugPrint('ItemDetail: App resumed, refreshing reviews');
+        fetchReviews();
+      }
+    }
+  }
+
+  // RouteAware methods
+  @override
+  void didPopNext() {
+    // Called when the top route has been popped off, and this route shows up.
+    _onPageResumed();
+  }
+
+  @override
+  void didPushNext() {
+    // Called when a new route has been pushed, and this route is no longer visible.
+  }
+
+  /// Called when the page becomes visible again (e.g., when returning from another page)
+  void _onPageResumed() {
+    if (product != null) {
+      debugPrint('ItemDetail: Page resumed, refreshing reviews');
+      fetchReviews();
+    }
   }
 
   Future<void> fetchProduct() async {
@@ -63,61 +131,260 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
           : ['assets/placeholder.png']; // fallback image
       isLoading = false;
     });
+
+    // Check like status, fetch reviews, and fetch related products after product is loaded
+    _checkLikeStatus();
+    fetchReviews();
+    fetchRelatedProducts();
   }
 
-  Future<void> fetchTopSellingItems() async {
+
+
+  Future<void> fetchReviews() async {
+    if (product == null) return;
+
     setState(() {
-      isLoadingTopSelling = true;
+      isLoadingReviews = true;
     });
+
     try {
-      final response = await Supabase.instance.client
-          .from('order_items')
-          .select('product:product_id(id,title,price,description,product_images(image_url,is_thumbnail)),quantity');
-      setState(() {
-        topSellingItems = List<Map<String, dynamic>>.from(response);
-        isLoadingTopSelling = false;
-      });
+      final reviewService = ReviewService();
+
+      debugPrint('ItemDetail: Starting to fetch reviews for product ${widget.productId}');
+
+      // Fetch reviews
+      final fetchedReviews = await reviewService.getProductReviews(widget.productId);
+      debugPrint('ItemDetail: Raw reviews fetched: ${fetchedReviews.length}');
+
+      final formattedReviews = fetchedReviews.map((review) =>
+        ReviewService.formatReviewForDisplay(review)).toList();
+      debugPrint('ItemDetail: Formatted reviews: ${formattedReviews.length}');
+
+      // Fetch rating info
+      final ratingInfo = await reviewService.getProductRating(widget.productId);
+      debugPrint('ItemDetail: Rating info: $ratingInfo');
+
+      // Check if user has reviewed
+      final userReviewed = await reviewService.hasUserReviewed(widget.productId);
+      debugPrint('ItemDetail: User has reviewed: $userReviewed');
+
+      if (mounted) {
+        setState(() {
+          reviews = formattedReviews;
+          averageRating = ratingInfo['average_rating'];
+          totalReviews = ratingInfo['total_reviews'];
+          hasUserReviewed = userReviewed;
+          isLoadingReviews = false;
+        });
+        debugPrint('ItemDetail: State updated with ${reviews.length} reviews');
+      }
     } catch (e) {
+      debugPrint('ItemDetail: Error fetching reviews: $e');
+      if (mounted) {
+        setState(() {
+          reviews = [];
+          averageRating = 0.0;
+          totalReviews = 0;
+          hasUserReviewed = false;
+          isLoadingReviews = false;
+        });
+      }
+    }
+  }
+
+  /// Refresh reviews - can be called when returning to the page
+  Future<void> refreshReviews() async {
+    debugPrint('ItemDetail: Refreshing reviews...');
+    await fetchReviews();
+  }
+
+  Future<void> fetchRelatedProducts() async {
+    if (product == null) return;
+
+    setState(() {
+      isLoadingRelatedProducts = true;
+    });
+
+    try {
+      final currentPrice = (product!['price'] is num)
+          ? (product!['price'] as num).toDouble()
+          : double.tryParse(product!['price'].toString()) ?? 0.0;
+
+      // Calculate price range (±20% of current product price)
+      final minPrice = currentPrice * 0.8;
+      final maxPrice = currentPrice * 1.2;
+
+      // Note: Could implement keyword-based similarity matching in the future
+
+      // Build query to find related products
+      var query = Supabase.instance.client
+          .from('products')
+          .select('*, product_images(*)')
+          .neq('id', widget.productId) // Exclude current product
+          .gte('price', minPrice)
+          .lte('price', maxPrice)
+          .limit(6);
+
+      final response = await query;
+      List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(response);
+
+      // If we don't have enough products in price range, get more products
+      if (products.length < 4) {
+        final additionalQuery = await Supabase.instance.client
+            .from('products')
+            .select('*, product_images(*)')
+            .neq('id', widget.productId)
+            .order('created_at', ascending: false)
+            .limit(6);
+
+        final additionalProducts = List<Map<String, dynamic>>.from(additionalQuery);
+
+        // Merge and deduplicate
+        final existingIds = products.map((p) => p['id']).toSet();
+        for (var product in additionalProducts) {
+          if (!existingIds.contains(product['id']) && products.length < 6) {
+            products.add(product);
+          }
+        }
+      }
+
+      // Process product images and calculate ratings
+      for (var product in products) {
+        // Process images
+        final images = (product['product_images'] as List<dynamic>? ?? []);
+        if (images.isNotEmpty) {
+          product['image_urls'] = images.map<String>((img) => img['image_url'] as String).toList();
+          product['image'] = product['image_urls'][0];
+        } else {
+          product['image_urls'] = ['assets/placeholder.png'];
+          product['image'] = 'assets/placeholder.png';
+        }
+
+        // Calculate sales data
+        try {
+          final salesResponse = await Supabase.instance.client
+              .from('order_items')
+              .select('''
+                quantity,
+                order:order_id!inner (
+                  status
+                )
+              ''')
+              .eq('product_id', product['id'])
+              .eq('order.status', 'Completed');
+
+          int totalSold = 0;
+          for (var item in salesResponse) {
+            totalSold += (item['quantity'] as int? ?? 0);
+          }
+          product['total_sold'] = totalSold;
+        } catch (e) {
+          product['total_sold'] = 0;
+        }
+
+        // Calculate average rating
+        try {
+          final reviewsResponse = await Supabase.instance.client
+              .from('reviews')
+              .select('rating')
+              .eq('product_id', product['id']);
+
+          if (reviewsResponse.isNotEmpty) {
+            final ratings = reviewsResponse.map((r) => (r['rating'] as num).toDouble()).toList();
+            product['rating'] = ratings.reduce((a, b) => a + b) / ratings.length;
+          } else {
+            product['rating'] = 0.0;
+          }
+        } catch (e) {
+          product['rating'] = 0.0;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          relatedProducts = products;
+          isLoadingRelatedProducts = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('ItemDetail: Error fetching related products: $e');
+      if (mounted) {
+        setState(() {
+          relatedProducts = [];
+          isLoadingRelatedProducts = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _checkLikeStatus() async {
+    if (product == null) return;
+
+    final isLiked = await _likedProductsService.isProductLiked(widget.productId);
+    if (mounted) {
       setState(() {
-        topSellingItems = [];
-        isLoadingTopSelling = false;
+        _isFavorite = isLiked;
       });
     }
   }
 
-  // Mock data for reviews
-  final List<Map<String, dynamic>> reviews = [
-    {
-      'name': 'John D.',
-      'rating': 5,
-      'comment': 'My pet loves this! Great quality and fast delivery.',
-      'date': '2 days ago',
-      'avatar': 'assets/avatar1.png',
-    },
-    {
-      'name': 'Sarah M.',
-      'rating': 4,
-      'comment': 'Good product but packaging could be better.',
-      'date': '1 week ago',
-      'avatar': 'assets/avatar2.png',
-    },
-  ];
+  Future<void> _toggleLike() async {
+    if (product == null) return;
 
-  // Mock data for suggested products
-  final List<Map<String, dynamic>> suggestedProducts = [
-    {
-      'name': 'Premium Dog Food',
-      'image': 'assets/food1.png',
-      'price': '₱1,249.50', // Converted from $24.99
-      'rating': 4.5,
-    },
-    {
-      'name': 'Cat Treats',
-      'image': 'assets/food2.png',
-      'price': '₱649.50', // Converted from $12.99
-      'rating': 4.8,
-    },
-  ];
+    setState(() {
+      _isLikeLoading = true;
+    });
+
+    try {
+      final success = await _likedProductsService.toggleLike(widget.productId);
+
+      if (mounted) {
+        if (success) {
+          // Re-check the actual like status from the database to ensure consistency
+          final actualLikeStatus = await _likedProductsService.isProductLiked(widget.productId);
+
+          setState(() {
+            _isFavorite = actualLikeStatus;
+            _isLikeLoading = false;
+            _likeStateChanged = true; // Mark that like state has changed
+          });
+
+          if (mounted) {
+            final productName = product?['title'] ?? product?['name'] ?? 'Product';
+            if (_isFavorite) {
+              EnhancedToasts.showItemLiked(context, productName);
+            } else {
+              EnhancedToasts.showItemUnliked(context, productName);
+            }
+          }
+        } else {
+          setState(() {
+            _isLikeLoading = false;
+          });
+
+          EnhancedToasts.showError(
+            context,
+            'Failed to update liked status. Please try again.',
+            duration: const Duration(seconds: 2),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLikeLoading = false;
+        });
+
+        EnhancedToasts.showError(
+          context,
+          'Error: ${e.toString()}',
+          duration: const Duration(seconds: 2),
+        );
+      }
+    }
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -127,9 +394,16 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: Stack(
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          // Return the like state change status when popping
+          Navigator.of(context).pop(_likeStateChanged);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: backgroundColor,
+        body: Stack(
         children: [
           // Main content
           CustomScrollView(
@@ -141,23 +415,24 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                 backgroundColor: Colors.white,
                 leading: IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(context, _likeStateChanged),
                 ),
                 actions: [
                   IconButton(
-                    icon: Icon(
-                      _isFavorite ? Icons.favorite : Icons.favorite_border,
-                      color: _isFavorite ? primaryRed : Colors.grey,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isFavorite = !_isFavorite;
-                      });
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.share_outlined),
-                    onPressed: () {},
+                    icon: _isLikeLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
+                            ),
+                          )
+                        : Icon(
+                            _isFavorite ? Icons.favorite : Icons.favorite_border,
+                            color: _isFavorite ? primaryRed : Colors.grey,
+                          ),
+                    onPressed: _isLikeLoading ? null : _toggleLike,
                   ),
                 ],
                 flexibleSpace: FlexibleSpaceBar(
@@ -223,13 +498,13 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                               margin: const EdgeInsets.symmetric(horizontal: 4),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(4),
-                                color: Colors.white.withOpacity(
-                                  _current == entry.key ? 0.9 : 0.4,
+                                color: Colors.white.withValues(
+                                  alpha: _current == entry.key ? 0.9 : 0.4,
                                 ),
                                 // Add shadow for better visibility against any background
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
+                                    color: Colors.black.withValues(alpha: 0.2),
                                     blurRadius: 3,
                                     offset: const Offset(0, 1),
                                   ),
@@ -251,7 +526,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
                               colors: [
-                                Colors.black.withOpacity(0.4),
+                                Colors.black.withValues(alpha: 0.4),
                                 Colors.transparent,
                               ],
                             ),
@@ -277,39 +552,25 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Text(
-                            product?['price'] != null
-                                ? (product!['price'] is num
-                                    ? CurrencyFormatter.formatPeso(product!['price'])
-                                    : CurrencyFormatter.formatPeso(product!['price'].toString()))
-                                : 'N/A',
-                            style: TextStyle(
+                      // Price display with discount support
+                      Builder(
+                        builder: (context) {
+                          if (product == null) {
+                            return const Text('N/A', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600));
+                          }
+
+                          final priceInfo = ProductDiscountHelper.getProductPrices(product!);
+                          return PriceDisplay(
+                            currentPrice: priceInfo['current_price'],
+                            originalPrice: priceInfo['original_price'],
+                            discountPercentage: priceInfo['discount_percentage'],
+                            currentPriceStyle: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w600,
-                              color: primaryBlue,  // Changed to blue
+                              color: primaryBlue,
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: primaryRed.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '20% OFF',
-                              style: TextStyle(
-                                color: primaryRed,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
+                          );
+                        },
                       ),
                       if (product?['quantity'] != null) ...[
                         const SizedBox(height: 8),
@@ -326,17 +587,24 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                       // Rating and reviews
                       Row(
                         children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 20),
-                          const Text(
-                            '4.8',
-                            style: TextStyle(
+                          Icon(
+                            totalReviews > 0 ? Icons.star : Icons.star_border,
+                            color: totalReviews > 0 ? Colors.amber : Colors.grey,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            totalReviews > 0 ? averageRating.toStringAsFixed(1) : '0.0',
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '(2 Reviews)',
+                            totalReviews > 0
+                                ? '($totalReviews Review${totalReviews > 1 ? 's' : ''})'
+                                : '(No reviews yet)',
                             style: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 16,
@@ -420,18 +688,18 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                       const SizedBox(height: 24),
                       // Add Review Button
                       ElevatedButton.icon(
-                        onPressed: () {
+                        onPressed: hasUserReviewed ? null : () {
                           setState(() {
                             _showReviewInput = true;
                           });
                         },
                         icon: const Icon(Icons.rate_review_outlined),
-                        label: const Text('Write a Review'),
+                        label: Text(hasUserReviewed ? 'Already Reviewed' : 'Write a Review'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
-                          foregroundColor: primaryBlue,
+                          foregroundColor: hasUserReviewed ? Colors.grey : primaryBlue,
                           elevation: 0,
-                          side: BorderSide(color: primaryBlue),
+                          side: BorderSide(color: hasUserReviewed ? Colors.grey : primaryBlue),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 12),
                         ),
@@ -477,6 +745,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                               ),
                               const SizedBox(height: 12),
                               TextField(
+                                controller: _reviewController,
                                 maxLines: 3,
                                 decoration: InputDecoration(
                                   hintText:
@@ -503,17 +772,62 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                                   ),
                                   const SizedBox(width: 12),
                                   ElevatedButton(
-                                    onPressed: () {
-                                      // Handle submit review
-                                      setState(() {
-                                        _showReviewInput = false;
-                                        _rating = 0;
-                                      });
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                            content:
-                                                Text('Review submitted')),
+                                    onPressed: () async {
+                                      final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+                                      if (_rating == 0) {
+                                        scaffoldMessenger.showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Please select a rating'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      if (_reviewController.text.trim().isEmpty) {
+                                        scaffoldMessenger.showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Please write a comment'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                        return;
+                                      }
+
+                                      final reviewService = ReviewService();
+                                      final success = await reviewService.addReview(
+                                        productId: widget.productId,
+                                        rating: _rating,
+                                        comment: _reviewController.text.trim(),
                                       );
+
+                                      if (success) {
+                                        setState(() {
+                                          _showReviewInput = false;
+                                          _rating = 0;
+                                          _reviewController.clear();
+                                        });
+
+                                        // Refresh reviews
+                                        await fetchReviews();
+
+                                        if (!mounted) return;
+                                        scaffoldMessenger.showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Review submitted successfully!'),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      } else {
+                                        if (!mounted) return;
+                                        scaffoldMessenger.showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Failed to submit review. Please try again.'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
                                     },
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: primaryBlue,
@@ -539,15 +853,82 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          TextButton(
-                            onPressed: () {},
-                            child: const Text('View All'),
-                          ),
+                          if (totalReviews > 0)
+                            TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => AllReviewsPage(
+                                      productId: widget.productId,
+                                      productName: product?['title'] ?? product?['name'] ?? 'Product',
+                                      averageRating: averageRating,
+                                      totalReviews: totalReviews,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: const Text('View All'),
+                            ),
                         ],
                       ),
-                      ...reviews.map((review) => _ReviewCard(review: review)),
+                      const SizedBox(height: 8),
+                      // Reviews content
+                      if (isLoadingReviews)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20),
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      else if (reviews.isEmpty)
+                        Center(
+                          child: Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.symmetric(vertical: 20),
+                            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[200]!),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.rate_review_outlined,
+                                  size: 48,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No reviews yet',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey[600],
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Be the first to review this product!',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        ...reviews.map((review) => _ReviewCard(review: review)),
                       const SizedBox(height: 24),
-                      // Suggested products
+                      // Related products section
                       const Text(
                         'You May Also Like',
                         style: TextStyle(
@@ -556,105 +937,68 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      SizedBox(
-                        height: 240, // Increased height to prevent overflow
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: suggestedProducts.length,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemBuilder: (context, index) {
-                            return _SuggestedProductCard(
-                              product: suggestedProducts[index],
-                            );
-                          },
+                      if (isLoadingRelatedProducts)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20),
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      else if (relatedProducts.isEmpty)
+                        Center(
+                          child: Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.symmetric(vertical: 20),
+                            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[200]!),
+                            ),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.shopping_bag_outlined,
+                                  size: 48,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No related products found',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Check out our other products in the shop',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        SizedBox(
+                          height: 240,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: relatedProducts.length,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemBuilder: (context, index) {
+                              return _RelatedProductCard(
+                                product: relatedProducts[index],
+                              );
+                            },
+                          ),
                         ),
-                      ),
                       // Bottom padding for sticky buttons
                       const SizedBox(height: 100),
-                      // Top Selling Section
-                      const Text(
-                        'Top Selling',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Builder(
-                        builder: (context) {
-                          if (isLoadingTopSelling) {
-                            return const Center(child: CircularProgressIndicator());
-                          }
-                          if (topSellingItems.isEmpty) {
-                            return const Center(child: Text('No sold items', style: TextStyle(color: Colors.grey, fontSize: 16)));
-                          }
-                          // Show top selling items
-                          return SizedBox(
-                            height: 140,
-                            child: ListView.separated(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: topSellingItems.length,
-                              separatorBuilder: (context, i) => const SizedBox(width: 12),
-                              itemBuilder: (context, i) {
-                                final item = topSellingItems[i];
-                                final product = item['product'] ?? {};
-                                final images = (product['product_images'] as List<dynamic>? ?? []);
-                                final imageUrl = images.isNotEmpty ? images.firstWhere((img) => img['is_thumbnail'] == true, orElse: () => images[0])['image_url'] : 'assets/placeholder.png';
-                                return Container(
-                                  width: 180,
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.05),
-                                        blurRadius: 6,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          imageUrl,
-                                          height: 60,
-                                          width: double.infinity,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) => Container(
-                                            color: Colors.grey[300],
-                                            height: 60,
-                                            child: const Icon(Icons.broken_image, color: Colors.grey),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        product['title'] ?? 'No Title',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        product['price'] != null ? CurrencyFormatter.formatPeso(product['price']) : 'N/A',
-                                        style: const TextStyle(color: primaryBlue, fontWeight: FontWeight.w500, fontSize: 14),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Sold: ${item['quantity'] ?? 0}',
-                                        style: const TextStyle(color: Colors.grey, fontSize: 13),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
                     ],
                   ),
                 ),
@@ -672,7 +1016,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                   ),
                 ],
@@ -702,43 +1046,43 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                             quantity: _selectedQuantity,
                           );
 
+                          if (!mounted) return;
+
                           if (success) {
                             if (mounted) {
+                              // ignore: use_build_context_synchronously
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Added $_selectedQuantity item(s) to cart!'),
+                                  content: Text('${productData['name']} added to cart'),
                                   backgroundColor: Colors.green,
-                                  action: SnackBarAction(
-                                    label: 'View Cart',
-                                    textColor: Colors.white,
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => const CartPage(showBackButton: true),
-                                        ),
-                                      );
-                                    },
-                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: const Duration(seconds: 2),
                                 ),
                               );
                             }
                           } else {
                             if (mounted) {
+                              // ignore: use_build_context_synchronously
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('Failed to add item to cart. Please try again.'),
                                   backgroundColor: Colors.red,
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: Duration(seconds: 2),
                                 ),
                               );
                             }
                           }
                         } catch (e) {
+                          if (!mounted) return;
                           if (mounted) {
+                            // ignore: use_build_context_synchronously
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('Error: ${e.toString()}'),
                                 backgroundColor: Colors.red,
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
                               ),
                             );
                           }
@@ -807,6 +1151,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -837,7 +1182,7 @@ class _ReviewCard extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: primaryBlue.withOpacity(0.1),
+                  color: primaryBlue.withValues(alpha: 0.1),
                 ),
                 child: Center(
                   child: Text(
@@ -906,11 +1251,11 @@ class _ReviewCard extends StatelessWidget {
   }
 }
 
-// Update the _SuggestedProductCard widget
-class _SuggestedProductCard extends StatelessWidget {
+// Related product card widget for "You May Also Like" section
+class _RelatedProductCard extends StatelessWidget {
   final Map<String, dynamic> product;
 
-  const _SuggestedProductCard({required this.product});
+  const _RelatedProductCard({required this.product});
 
   @override
   Widget build(BuildContext context) {
@@ -918,9 +1263,8 @@ class _SuggestedProductCard extends StatelessWidget {
     double priceValue = 0.0;
     if (product['price'] is String) {
       try {
-        priceValue = CurrencyFormatter.parsePeso(product['price'] as String);
+        priceValue = double.parse(product['price'] as String);
       } catch (e) {
-        // Handle parsing error, e.g., log or use a default
         priceValue = 0.0;
       }
     } else if (product['price'] is num) {
@@ -928,7 +1272,7 @@ class _SuggestedProductCard extends StatelessWidget {
     }
 
     final double ratingValue = (product['rating'] ?? 0.0).toDouble();
-    final int soldCountValue = (product['soldCount'] ?? 0); // Default to 0 if not present
+    final int soldCountValue = (product['total_sold'] ?? 0); // Use total_sold from our data
 
     return Container(
       width: 180, // Adjusted width for better layout
@@ -937,7 +1281,7 @@ class _SuggestedProductCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         elevation: 1, // Added subtle shadow
-        shadowColor: Colors.grey.withOpacity(0.2),
+        shadowColor: Colors.grey.withValues(alpha: 0.2),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () {
@@ -965,55 +1309,78 @@ class _SuggestedProductCard extends StatelessWidget {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.asset(
-                        product['image'],
-                        fit: BoxFit.cover,
-                        cacheWidth: 300, // Optimize memory usage
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: Colors.grey[300],
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.broken_image, color: Colors.grey[600]),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Image not available',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey[600],
+                      child: (product['image']?.toString().startsWith('http') ?? false)
+                          ? Image.network(
+                              product['image'],
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.grey[300],
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.broken_image, color: Colors.grey[600]),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Image not available',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey[600],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
                                   ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
+                                );
+                              },
+                            )
+                          : Image.asset(
+                              product['image'] ?? 'assets/placeholder.png',
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.grey[300],
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.broken_image, color: Colors.grey[600]),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Image not available',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey[600],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
                 // Product Name
                 Text(
-                  product['name'],
+                  product['title'] ?? product['name'] ?? 'Unknown Product',
                   style: const TextStyle(
-                    fontSize: 15, // Slightly larger
+                    fontSize: 15,
                     fontWeight: FontWeight.w500,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                // Product Description (static as per dashboard card)
+                // Product Price
                 Text(
-                  'High-quality item for your pet.', // Generic description
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 13,
+                  CurrencyFormatter.formatPeso(priceValue),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: primaryBlue,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
                 const Spacer(), // Pushes content below to the bottom
                 // Rating and Sold Count
@@ -1034,23 +1401,13 @@ class _SuggestedProductCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '${soldCountValue}k sold', // Assuming soldCount is in thousands
+                      '$soldCountValue sold',
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 13,
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                // Price
-                Text(
-                  CurrencyFormatter.formatPeso(priceValue),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: primaryBlue, // Match dashboard price color
-                  ),
                 ),
               ],
             ),

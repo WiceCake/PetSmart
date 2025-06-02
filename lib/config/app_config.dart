@@ -14,6 +14,8 @@ class AppConfig {
     defaultValue: '', // Empty default - will be handled gracefully
   );
 
+
+
   // Get configuration with fallbacks
   static String getSupabaseUrl() {
     // 1. Try environment variable first
@@ -49,8 +51,12 @@ class AppConfig {
     return '';
   }
 
+
+
   // Check if configuration is valid
   static bool isConfigured() {
     return getSupabaseUrl().isNotEmpty && getSupabaseAnonKey().isNotEmpty;
   }
+
+
 }

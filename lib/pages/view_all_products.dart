@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pet_smart/pages/shop/item_detail.dart';
 import 'package:pet_smart/services/product_service.dart';
+import 'package:pet_smart/services/order_service.dart';
 import 'package:pet_smart/utils/currency_formatter.dart';
 
 // Color constants matching app design patterns
@@ -27,6 +28,7 @@ class ViewAllProductsPage extends StatefulWidget {
 
 class _ViewAllProductsPageState extends State<ViewAllProductsPage> {
   final ProductService _productService = ProductService();
+  final OrderService _orderService = OrderService();
   final ScrollController _scrollController = ScrollController();
 
   List<Map<String, dynamic>> _allProducts = [];
@@ -36,6 +38,9 @@ class _ViewAllProductsPageState extends State<ViewAllProductsPage> {
   String? _errorMessage;
   String _sortBy = 'created_at';
   bool _sortAscending = false;
+
+  // Check if this is the "Recently Bought" page
+  bool get _isRecentlyBoughtPage => widget.title == 'Recently Bought';
 
   @override
   void initState() {
@@ -71,12 +76,23 @@ class _ViewAllProductsPageState extends State<ViewAllProductsPage> {
         _errorMessage = null;
       });
 
-      final newProducts = await _productService.getAllProducts(
-        page: _currentPage + 1,
-        limit: 20,
-        sortBy: _sortBy,
-        ascending: _sortAscending,
-      );
+      List<Map<String, dynamic>> newProducts;
+
+      if (_isRecentlyBoughtPage) {
+        // For "Recently Bought" page, use OrderService to get completed orders only
+        newProducts = await _orderService.getAllRecentlyBoughtProducts(
+          page: _currentPage + 1,
+          limit: 20,
+        );
+      } else {
+        // For other pages, use ProductService
+        newProducts = await _productService.getAllProducts(
+          page: _currentPage + 1,
+          limit: 20,
+          sortBy: _sortBy,
+          ascending: _sortAscending,
+        );
+      }
 
       if (!mounted) return;
 
@@ -93,7 +109,9 @@ class _ViewAllProductsPageState extends State<ViewAllProductsPage> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to load more products';
+        _errorMessage = _isRecentlyBoughtPage
+            ? 'Failed to load more recently bought items'
+            : 'Failed to load more products';
       });
     }
   }
@@ -107,12 +125,23 @@ class _ViewAllProductsPageState extends State<ViewAllProductsPage> {
         _hasMoreData = true;
       });
 
-      final products = await _productService.getAllProducts(
-        page: 1,
-        limit: 20,
-        sortBy: _sortBy,
-        ascending: _sortAscending,
-      );
+      List<Map<String, dynamic>> products;
+
+      if (_isRecentlyBoughtPage) {
+        // For "Recently Bought" page, use OrderService to get completed orders only
+        products = await _orderService.getAllRecentlyBoughtProducts(
+          page: 1,
+          limit: 20,
+        );
+      } else {
+        // For other pages, use ProductService
+        products = await _productService.getAllProducts(
+          page: 1,
+          limit: 20,
+          sortBy: _sortBy,
+          ascending: _sortAscending,
+        );
+      }
 
       if (!mounted) return;
 
@@ -124,7 +153,9 @@ class _ViewAllProductsPageState extends State<ViewAllProductsPage> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Failed to refresh products';
+        _errorMessage = _isRecentlyBoughtPage
+            ? 'Failed to refresh recently bought items'
+            : 'Failed to refresh products';
       });
     }
   }
@@ -244,21 +275,25 @@ class _ViewAllProductsPageState extends State<ViewAllProductsPage> {
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.sort, color: primaryBlue),
-            onPressed: _showSortOptions,
-            tooltip: 'Sort products',
-          ),
+          // Hide sort button for "Recently Bought" page since items should be sorted by purchase date
+          if (!_isRecentlyBoughtPage)
+            IconButton(
+              icon: const Icon(Icons.sort, color: primaryBlue),
+              onPressed: _showSortOptions,
+              tooltip: 'Sort products',
+            ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _refreshProducts,
         color: primaryBlue,
         child: _allProducts.isEmpty && !_isLoading
-            ? const Center(
+            ? Center(
                 child: Text(
-                  'No products available',
-                  style: TextStyle(
+                  _isRecentlyBoughtPage
+                      ? 'No recently bought items found'
+                      : 'No products available',
+                  style: const TextStyle(
                     color: Colors.grey,
                     fontSize: 16,
                   ),
@@ -325,13 +360,15 @@ class _ViewAllProductsPageState extends State<ViewAllProductsPage> {
                       ),
                     ),
                   if (!_hasMoreData && _allProducts.isNotEmpty)
-                    const SliverToBoxAdapter(
+                    SliverToBoxAdapter(
                       child: Center(
                         child: Padding(
-                          padding: EdgeInsets.all(20.0),
+                          padding: const EdgeInsets.all(20.0),
                           child: Text(
-                            'No more products to load',
-                            style: TextStyle(
+                            _isRecentlyBoughtPage
+                                ? 'No more recently bought items to load'
+                                : 'No more products to load',
+                            style: const TextStyle(
                               color: Colors.grey,
                               fontSize: 14,
                             ),

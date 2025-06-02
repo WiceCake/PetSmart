@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:pet_smart/auth/auth.dart';
 import 'package:pet_smart/pages/setting/account_information.dart';
 import 'package:pet_smart/pages/setting/address_book.dart';
 import 'package:pet_smart/pages/setting/country.dart';
@@ -7,7 +7,12 @@ import 'package:pet_smart/pages/setting/language.dart';
 import 'package:pet_smart/pages/setting/policies.dart';
 import 'package:pet_smart/pages/setting/help.dart';
 import 'package:pet_smart/pages/setting/feedback.dart';
+import 'package:pet_smart/pages/setting/notifications.dart';
+import 'package:pet_smart/pages/setting/privacy_security.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/components/enhanced_dialogs.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
+import 'package:pet_smart/main.dart';
 
 // Color constants
 const Color primaryRed = Color(0xFFE57373);
@@ -36,8 +41,8 @@ class SettingScreen extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             onTap: onTap,
             splashColor: isDestructive
-                ? Colors.red.withOpacity(0.1)
-                : primaryBlue.withOpacity(0.08),
+                ? Colors.red.withValues(alpha: 0.1)
+                : primaryBlue.withValues(alpha: 0.08),
             highlightColor: Colors.transparent,
             child: Container(
               width: double.infinity,
@@ -46,12 +51,12 @@ class SettingScreen extends StatelessWidget {
                 color: cardColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: Colors.grey.withValues(alpha: 0.1),
                   width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
+                    color: Colors.black.withValues(alpha: 0.02),
                     blurRadius: 4,
                     offset: const Offset(0, 1),
                   ),
@@ -64,8 +69,8 @@ class SettingScreen extends StatelessWidget {
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: isDestructive
-                            ? Colors.red.withOpacity(0.1)
-                            : primaryBlue.withOpacity(0.1),
+                            ? Colors.red.withValues(alpha: 0.1)
+                            : primaryBlue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
@@ -110,7 +115,7 @@ class SettingScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        shadowColor: Colors.grey.withOpacity(0.1),
+        shadowColor: Colors.grey.withValues(alpha: 0.1),
         title: const Text(
           'Settings',
           style: TextStyle(
@@ -175,14 +180,17 @@ class SettingScreen extends StatelessWidget {
                   ),
                 ),
                 onTap: () {
-                  // TODO: Navigate to notifications settings
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Notifications settings coming soon')),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const NotificationsPage()),
                   );
                 },
               ),
+
+              // Privacy & Security Section
+              sectionHeader('PRIVACY & SECURITY'),
               settingCard(
-                icon: Icons.privacy_tip_outlined,
+                icon: Icons.security_outlined,
                 child: const Text(
                   'Privacy & Security',
                   style: TextStyle(
@@ -192,9 +200,9 @@ class SettingScreen extends StatelessWidget {
                   ),
                 ),
                 onTap: () {
-                  // TODO: Navigate to privacy settings
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Privacy & Security settings coming soon')),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const PrivacySecurityPage()),
                   );
                 },
               ),
@@ -340,74 +348,113 @@ class SettingScreen extends StatelessWidget {
   }
 
   static Future<void> _showLogoutDialog(BuildContext context) async {
-    return showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text(
-            'Logout',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 20,
-            ),
-          ),
-          content: const Text(
-            'Are you sure you want to logout?',
-            style: TextStyle(fontSize: 16),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text(
-                'Cancel',
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            TextButton(
-              child: const Text(
-                'Logout',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await _logout(context);
-              },
-            ),
-          ],
-        );
-      },
-    );
+    // Show confirmation dialog first
+    final confirmed = await EnhancedDialogs.showLogoutConfirmation(context);
+
+    if (confirmed == true && context.mounted) {
+      // Show the loading dialog and get the dismissal function
+      final dismissDialog = await EnhancedDialogs.showLoadingDialog(context, message: 'Logging out...');
+
+      // Store context before async operation
+      if (context.mounted) {
+        // Perform logout with the dismissal function
+        await _logout(context, dismissDialog);
+      }
+    }
   }
 
-  static Future<void> _logout(BuildContext context) async {
-    try {
-      await Supabase.instance.client.auth.signOut();
+  static Future<void> _logout(BuildContext context, VoidCallback dismissDialog) async {
+    bool dialogDismissed = false;
 
-      if (context.mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const AuthScreen()),
-          (route) => false,
-        );
+    try {
+      debugPrint('🔐 Starting logout process...');
+
+      // Perform logout with timeout
+      await Future.any([
+        Supabase.instance.client.auth.signOut(),
+        Future.delayed(const Duration(seconds: 8), () => throw TimeoutException('Logout timeout', const Duration(seconds: 8))),
+      ]);
+
+      debugPrint('🔐 Logout successful - Supabase signOut completed');
+
+      // Dismiss the loading dialog first using the dismissal function
+      if (!dialogDismissed) {
+        try {
+          dismissDialog();
+          dialogDismissed = true;
+          debugPrint('🔐 Loading dialog dismissed using dismissal function');
+        } catch (popError) {
+          debugPrint('🔐 Error dismissing dialog with dismissal function: $popError');
+          // Fallback to context-based dismissal
+          if (context.mounted) {
+            try {
+              Navigator.of(context).pop();
+              dialogDismissed = true;
+              debugPrint('🔐 Loading dialog dismissed using context fallback');
+            } catch (contextPopError) {
+              debugPrint('🔐 Error dismissing dialog with context: $contextPopError');
+            }
+          }
+        }
       }
-    } catch (e) {
+
+      // Small delay to ensure the dialog is dismissed before navigation
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Navigate to auth screen - use pushNamedAndRemoveUntil to clear the entire stack
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error logging out: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        debugPrint('🔐 Navigating to auth screen...');
+        try {
+          Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+          debugPrint('🔐 Navigation completed successfully');
+        } catch (navError) {
+          debugPrint('🔐 Navigation error: $navError');
+          // Fallback: try direct navigation to AuthWrapper
+          try {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const AuthWrapper()),
+              (route) => false,
+            );
+            debugPrint('🔐 Fallback navigation completed');
+          } catch (fallbackError) {
+            debugPrint('🔐 Fallback navigation error: $fallbackError');
+          }
+        }
+      }
+
+    } catch (e) {
+      debugPrint('🔐 Logout error: $e');
+
+      // Ensure the loading dialog is dismissed
+      if (!dialogDismissed) {
+        try {
+          dismissDialog();
+          dialogDismissed = true;
+          debugPrint('🔐 Loading dialog dismissed after error using dismissal function');
+        } catch (popError) {
+          debugPrint('🔐 Error dismissing dialog with dismissal function: $popError');
+          // Fallback to context-based dismissal
+          if (context.mounted) {
+            try {
+              Navigator.of(context).pop();
+              dialogDismissed = true;
+              debugPrint('🔐 Loading dialog dismissed after error using context fallback');
+            } catch (contextPopError) {
+              debugPrint('🔐 Error dismissing dialog with context: $contextPopError');
+            }
+          }
+        }
+      }
+
+      // Small delay before showing error
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Show error message
+      if (context.mounted) {
+        EnhancedToasts.showError(
+          context,
+          'Logout failed: ${e.toString()}',
+          duration: const Duration(seconds: 3),
         );
       }
     }

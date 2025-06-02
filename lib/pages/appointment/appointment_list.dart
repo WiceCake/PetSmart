@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pet_smart/pages/appointment/appointment.dart';
 import 'package:pet_smart/services/appointment_service.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
 
 // Color constants matching app design patterns
 const Color primaryBlue = Color(0xFF233A63);   // Main primary color
@@ -26,6 +28,14 @@ class _AppointmentListScreenState extends State<AppointmentListScreen> with Sing
   bool _isLoading = true;
   String? _error;
   String? _cancellingAppointmentId; // Track which appointment is being cancelled
+
+  // Stream subscriptions for real-time updates
+  StreamSubscription<List<Map<String, dynamic>>>? _upcomingSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _pastSubscription;
+
+  // Real-time update indicators
+  bool _isRealtimeConnected = false;
+  bool _hasRealtimeError = false;
 
   /// Check if an appointment is expired (past its scheduled date and time)
   bool _isAppointmentExpired(Map<String, dynamic> appointment) {
@@ -62,7 +72,141 @@ class _AppointmentListScreenState extends State<AppointmentListScreen> with Sing
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadAppointments();
+    _initializeRealtimeAndLoadData();
+  }
+
+  /// Initialize real-time subscriptions and load initial data
+  Future<void> _initializeRealtimeAndLoadData() async {
+    try {
+      // Initialize real-time subscriptions
+      await _appointmentService.initializeRealtimeSubscriptions();
+
+      // Set up stream listeners
+      _setupStreamListeners();
+
+      // Load initial data
+      await _loadAppointments();
+
+      setState(() {
+        _isRealtimeConnected = true;
+        _hasRealtimeError = false;
+      });
+    } catch (e) {
+      debugPrint('AppointmentListScreen: Error initializing real-time: $e');
+      setState(() {
+        _hasRealtimeError = true;
+        _isRealtimeConnected = false;
+      });
+
+      // Fallback to manual loading
+      await _loadAppointments();
+    }
+  }
+
+  /// Setup stream listeners for real-time updates
+  void _setupStreamListeners() {
+    // Listen to upcoming appointments stream
+    _upcomingSubscription = _appointmentService.upcomingAppointmentsStream.listen(
+      (appointments) {
+        debugPrint('AppointmentListScreen: Received ${appointments.length} upcoming appointments from stream');
+        _processUpcomingAppointments(appointments);
+      },
+      onError: (error) {
+        debugPrint('AppointmentListScreen: Error in upcoming appointments stream: $error');
+        setState(() {
+          _hasRealtimeError = true;
+        });
+      },
+    );
+
+    // Listen to past appointments stream
+    _pastSubscription = _appointmentService.pastAppointmentsStream.listen(
+      (appointments) {
+        debugPrint('AppointmentListScreen: Received ${appointments.length} past appointments from stream');
+        _processPastAppointments(appointments);
+      },
+      onError: (error) {
+        debugPrint('AppointmentListScreen: Error in past appointments stream: $error');
+        setState(() {
+          _hasRealtimeError = true;
+        });
+      },
+    );
+  }
+
+  /// Process upcoming appointments from real-time stream
+  void _processUpcomingAppointments(List<Map<String, dynamic>> appointments) {
+    if (!mounted) return;
+
+    // Filter expired appointments from upcoming and add them to past
+    final List<Map<String, dynamic>> filteredUpcoming = [];
+    final List<Map<String, dynamic>> expiredAppointments = [];
+
+    for (final appointment in appointments) {
+      if (_isAppointmentExpired(appointment)) {
+        // Add expired status to the appointment for display
+        final expiredAppointment = Map<String, dynamic>.from(appointment);
+        expiredAppointment['effective_status'] = 'Expired';
+        expiredAppointments.add(expiredAppointment);
+      } else {
+        filteredUpcoming.add(appointment);
+      }
+    }
+
+    setState(() {
+      _upcomingAppointments = filteredUpcoming;
+      _isLoading = false;
+      _error = null;
+    });
+
+    // If we have expired appointments, add them to past appointments
+    if (expiredAppointments.isNotEmpty) {
+      _addExpiredToPastAppointments(expiredAppointments);
+    }
+  }
+
+  /// Process past appointments from real-time stream
+  void _processPastAppointments(List<Map<String, dynamic>> appointments) {
+    if (!mounted) return;
+
+    // Add effective status for expired appointments in past list
+    final processedPast = appointments.map((appointment) {
+      final processed = Map<String, dynamic>.from(appointment);
+      if (appointment['status'] == 'Expired' ||
+          (appointment['status'] == 'Pending' && _isAppointmentExpired(appointment))) {
+        processed['effective_status'] = 'Expired';
+      }
+      return processed;
+    }).toList();
+
+    // Sort by date (most recent first)
+    processedPast.sort((a, b) {
+      final dateA = DateTime.parse(a['appointment_date']);
+      final dateB = DateTime.parse(b['appointment_date']);
+      return dateB.compareTo(dateA);
+    });
+
+    setState(() {
+      _pastAppointments = processedPast;
+      _isLoading = false;
+      _error = null;
+    });
+  }
+
+  /// Add expired appointments to past appointments list
+  void _addExpiredToPastAppointments(List<Map<String, dynamic>> expiredAppointments) {
+    final allPastAppointments = [..._pastAppointments, ...expiredAppointments];
+
+    // Sort by date (most recent first)
+    allPastAppointments.sort((a, b) {
+      final dateA = DateTime.parse(a['appointment_date']);
+      final dateB = DateTime.parse(b['appointment_date']);
+      return dateB.compareTo(dateA);
+    });
+
+    setState(() {
+      _pastAppointments = allPastAppointments;
+    });
   }
 
   Future<void> _loadAppointments() async {
@@ -123,9 +267,44 @@ class _AppointmentListScreenState extends State<AppointmentListScreen> with Sing
     }
   }
 
+  /// Handle pull-to-refresh
+  Future<void> _handleRefresh() async {
+    try {
+      debugPrint('AppointmentListScreen: Manual refresh triggered');
+
+      // Show brief loading indicator
+      if (mounted) {
+        EnhancedToasts.showInfo(
+          context,
+          'Refreshing appointments...',
+          duration: const Duration(seconds: 1),
+        );
+      }
+
+      // Trigger manual refresh of appointment data
+      await _appointmentService.refreshAppointmentData();
+
+      debugPrint('AppointmentListScreen: Manual refresh completed');
+    } catch (e) {
+      debugPrint('AppointmentListScreen: Error during manual refresh: $e');
+      if (mounted) {
+        EnhancedToasts.showError(
+          context,
+          'Failed to refresh appointments',
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
+    // Cancel stream subscriptions
+    _upcomingSubscription?.cancel();
+    _pastSubscription?.cancel();
+
+    // Dispose tab controller
     _tabController.dispose();
+
     super.dispose();
   }
 
@@ -173,15 +352,49 @@ class _AppointmentListScreenState extends State<AppointmentListScreen> with Sing
                           icon: const Icon(Icons.arrow_back, color: primaryBlue),
                           onPressed: () => Navigator.pop(context),
                         ),
-                        const Expanded(
-                          child: Text(
-                            'My Appointments',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: primaryBlue,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 20,
-                            ),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              const Text(
+                                'My Appointments',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: primaryBlue,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 20,
+                                ),
+                              ),
+                              // Real-time connection status indicator
+                              if (_isRealtimeConnected || _hasRealtimeError) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      _isRealtimeConnected
+                                          ? Icons.wifi
+                                          : Icons.wifi_off,
+                                      size: 12,
+                                      color: _isRealtimeConnected
+                                          ? primaryGreen
+                                          : Colors.orange,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _isRealtimeConnected
+                                          ? 'Live updates'
+                                          : 'Manual refresh',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: _isRealtimeConnected
+                                            ? primaryGreen
+                                            : Colors.orange,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         IconButton(
@@ -193,7 +406,15 @@ class _AppointmentListScreenState extends State<AppointmentListScreen> with Sing
                                 builder: (context) => const AppointmentScreen(),
                               ),
                             ).then((_) {
-                              setState(() {});
+                              // Trigger refresh when returning from appointment booking
+                              if (_isRealtimeConnected) {
+                                // Real-time will handle the update automatically
+                                debugPrint('AppointmentListScreen: Returned from booking, real-time will update');
+                              } else {
+                                // Manual refresh if real-time is not connected
+                                debugPrint('AppointmentListScreen: Returned from booking, triggering manual refresh');
+                                _handleRefresh();
+                              }
                             });
                           },
                         ),
@@ -267,8 +488,16 @@ class _AppointmentListScreenState extends State<AppointmentListScreen> with Sing
                         : TabBarView(
                             controller: _tabController,
                             children: [
-                              _buildAppointmentsList(_upcomingAppointments, true),
-                              _buildAppointmentsList(_pastAppointments, false),
+                              RefreshIndicator(
+                                onRefresh: _handleRefresh,
+                                color: primaryBlue,
+                                child: _buildAppointmentsList(_upcomingAppointments, true),
+                              ),
+                              RefreshIndicator(
+                                onRefresh: _handleRefresh,
+                                color: primaryBlue,
+                                child: _buildAppointmentsList(_pastAppointments, false),
+                              ),
                             ],
                           ),
               ),
@@ -281,40 +510,69 @@ class _AppointmentListScreenState extends State<AppointmentListScreen> with Sing
 
   Widget _buildAppointmentsList(List<Map<String, dynamic>> appointments, bool isUpcoming) {
     if (appointments.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isUpcoming ? Icons.event_available : Icons.history,
-              size: 80,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isUpcoming ? 'No upcoming appointments' : 'No past appointments',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    isUpcoming ? Icons.event_available : Icons.history,
+                    size: 80,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isUpcoming ? 'No upcoming appointments' : 'No past appointments',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isUpcoming
+                      ? 'Book an appointment to get started'
+                      : 'Your appointment history will appear here',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  if (_isRealtimeConnected) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.sync,
+                          size: 16,
+                          color: primaryGreen,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Real-time updates active',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: primaryGreen,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              isUpcoming
-                ? 'Book an appointment to get started'
-                : 'Your appointment history will appear here',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
     return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       itemCount: appointments.length,
       itemBuilder: (context, index) {

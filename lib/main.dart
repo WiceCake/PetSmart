@@ -1,8 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:pet_smart/auth/auth.dart';
+import 'package:pet_smart/auth/user_details.dart';
+import 'package:pet_smart/auth/profile_setup.dart';
+
 import 'package:pet_smart/components/nav_bar.dart';
 import 'package:pet_smart/config/app_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/services/push_notification_service.dart';
+import 'package:pet_smart/services/realtime_notification_service.dart';
+import 'package:pet_smart/services/navigation_service.dart';
+import 'package:pet_smart/services/profile_completion_service.dart';
+
+import 'package:pet_smart/services/deep_link_service.dart';
+import 'package:pet_smart/pages/notifications_list.dart';
 
 /// Main entry point of the application
 void main() async {
@@ -69,6 +79,7 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       title: 'PetSmart',
       debugShowCheckedModeBanner: false,
+      navigatorKey: NavigationService.navigatorKey,
       theme: ThemeData(
         primarySwatch: Colors.blue,
         primaryColor: const Color(0xFF233A63),
@@ -77,6 +88,7 @@ class _MyAppState extends State<MyApp> {
       home: _showSplash ? const SplashScreen() : const AuthWrapper(),
       routes: {
         '/auth': (context) => const AuthWrapper(),
+        '/notifications': (context) => const NotificationsListPage(),
       },
     );
   }
@@ -178,6 +190,7 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _isLoading = true;
   bool _isLoggedIn = false;
+  ProfileCompletionStatus? _profileStatus;
 
   static const Duration _timeoutDuration = Duration(seconds: 3);
 
@@ -187,23 +200,79 @@ class _AuthWrapperState extends State<AuthWrapper> {
     debugPrint('🔐 AuthWrapper: Initializing authentication check');
     _checkAuthStatus();
     _setupAuthListener();
+    // Initialize deep links after a small delay to ensure context is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeDeepLinks();
+    });
+  }
+
+  /// Initialize deep link handling for OAuth callbacks
+  void _initializeDeepLinks() {
+    try {
+      debugPrint('🔗 Initializing deep link service...');
+      DeepLinkService.initialize(context);
+      debugPrint('🔗 Deep link service initialized successfully');
+    } catch (e) {
+      debugPrint('🔗 Error initializing deep link service: $e');
+    }
   }
 
   /// Setup authentication state listener for real-time updates
   void _setupAuthListener() {
     if (AppConfig.isConfigured()) {
       try {
-        Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+        Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
           final session = data.session;
-          final isLoggedIn = session != null;
+          final user = data.session?.user;
+          final event = data.event;
 
-          debugPrint('Auth state changed - User logged in: $isLoggedIn');
+          debugPrint('🔐 Auth state change event: $event');
+          debugPrint('🔐 Auth state changed - Session exists: ${session != null}');
+          debugPrint('🔐 Auth state changed - Email confirmed: ${user?.emailConfirmedAt != null}');
+
+          // Check if session exists and user is present
+          final hasSession = session != null && user != null;
+
+          debugPrint('🔐 Auth state changed - Has session: $hasSession');
+          debugPrint('🔐 Auth state changed - Email confirmed: ${user?.emailConfirmedAt != null}');
 
           if (mounted) {
-            setState(() {
-              _isLoggedIn = isLoggedIn;
-              _isLoading = false;
-            });
+            if (hasSession) {
+              // Check profile completion status (includes email verification)
+              final profileStatus = await ProfileCompletionService().checkProfileCompletion(user.id);
+              debugPrint('🔐 Auth state changed - Profile status: $profileStatus');
+
+              setState(() {
+                _isLoggedIn = profileStatus == ProfileCompletionStatus.complete;
+                _profileStatus = profileStatus;
+                _isLoading = false;
+              });
+
+              // Initialize push notifications when user is fully logged in
+              if (_isLoggedIn) {
+                _initializePushNotifications();
+                // Execute any pending navigation after login
+                _executePendingNavigation();
+              }
+            } else {
+              // Handle logout/signout events
+              debugPrint('🔐 User logged out - clearing state');
+
+              // Cleanup real-time notification service
+              try {
+                final realtimeNotificationService = RealtimeNotificationService();
+                await realtimeNotificationService.dispose();
+                debugPrint('Real-time notification service disposed on logout');
+              } catch (e) {
+                debugPrint('Error disposing real-time notification service: $e');
+              }
+
+              setState(() {
+                _isLoggedIn = false;
+                _profileStatus = null;
+                _isLoading = false;
+              });
+            }
           }
         });
       } catch (e) {
@@ -227,20 +296,37 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
       // Check current session with retry logic for release mode
       bool isLoggedIn = false;
+      ProfileCompletionStatus? profileStatus;
+
       for (int attempt = 0; attempt < 5; attempt++) {
         try {
           final session = Supabase.instance.client.auth.currentSession;
-          isLoggedIn = session != null;
+          final user = Supabase.instance.client.auth.currentUser;
 
-          if (isLoggedIn) {
-            debugPrint('Auth check completed - User logged in: true');
+          // Check if session exists and user is present
+          bool hasSession = session != null && user != null;
+
+          if (session != null && user != null) {
+            debugPrint('Auth check completed - Session exists: true');
+            debugPrint('Email confirmed: ${user.emailConfirmedAt != null}');
             debugPrint('Session expires at: ${session.expiresAt}');
 
             // Verify session is not expired
             final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
             if (session.expiresAt != null && session.expiresAt! <= now) {
               debugPrint('Session expired, treating as logged out');
-              isLoggedIn = false;
+              hasSession = false;
+            }
+
+            if (hasSession) {
+              debugPrint('User has valid session, checking profile completion');
+              // Check profile completion status (includes email verification)
+              profileStatus = await ProfileCompletionService().checkProfileCompletion(user.id);
+              debugPrint('Profile completion status: $profileStatus');
+
+              // User is fully logged in only if profile is complete
+              isLoggedIn = profileStatus == ProfileCompletionStatus.complete;
+              debugPrint('User fully logged in: $isLoggedIn');
             }
             break;
           }
@@ -261,7 +347,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
 
       debugPrint('Final auth check result - User logged in: $isLoggedIn');
-      _updateAuthState(isLoggedIn: isLoggedIn);
+      _updateAuthState(isLoggedIn: isLoggedIn, profileStatus: profileStatus);
+
+      // Initialize push notifications if user is already logged in
+      if (isLoggedIn) {
+        _initializePushNotifications();
+      }
 
     } catch (e) {
       debugPrint('Critical error during auth check: $e');
@@ -273,10 +364,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   /// Update authentication state if widget is still mounted
-  void _updateAuthState({required bool isLoggedIn}) {
+  void _updateAuthState({required bool isLoggedIn, ProfileCompletionStatus? profileStatus}) {
     if (mounted) {
       setState(() {
         _isLoggedIn = isLoggedIn;
+        _profileStatus = profileStatus;
         _isLoading = false;
       });
     }
@@ -292,17 +384,89 @@ class _AuthWrapperState extends State<AuthWrapper> {
     });
   }
 
+  /// Initialize push notification service and real-time notifications
+  Future<void> _initializePushNotifications() async {
+    try {
+      // Initialize push notification service
+      final pushService = PushNotificationService();
+      await pushService.initialize();
+      debugPrint('Push notification service initialized successfully');
+
+      // Initialize real-time notification service
+      final realtimeNotificationService = RealtimeNotificationService();
+      await realtimeNotificationService.initialize();
+      debugPrint('Real-time notification service initialized successfully');
+    } catch (e) {
+      debugPrint('Error initializing notification services: $e');
+    }
+  }
+
+  /// Execute any pending navigation after authentication
+  Future<void> _executePendingNavigation() async {
+    try {
+      final navigationService = NavigationService();
+      if (navigationService.hasPendingNavigation) {
+        // Small delay to ensure the UI is ready
+        await Future.delayed(const Duration(milliseconds: 500));
+        await navigationService.executePendingNavigation();
+      }
+    } catch (e) {
+      debugPrint('Error executing pending navigation: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    // Cleanup services
+    DeepLinkService.dispose();
+
+    // Cleanup real-time notification service
+    try {
+      final realtimeNotificationService = RealtimeNotificationService();
+      realtimeNotificationService.dispose();
+    } catch (e) {
+      debugPrint('Error disposing real-time notification service in dispose: $e');
+    }
+
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const LoadingScreen();
     }
 
+    // Handle different authentication and profile completion states
     if (_isLoggedIn) {
       return const BottomNavigation();
-    } else {
-      return const AuthScreen();
+    } else if (_profileStatus != null) {
+      // User is authenticated but profile is incomplete
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        switch (_profileStatus!) {
+          case ProfileCompletionStatus.needsEmailVerification:
+            // This case is now unused but kept for compatibility
+            return const BottomNavigation();
+          case ProfileCompletionStatus.needsUserDetails:
+            return UserDetailsScreen(
+              userId: user.id,
+              userEmail: user.email ?? '',
+            );
+          case ProfileCompletionStatus.needsProfileSetup:
+            return ProfileSetupScreen(
+              userId: user.id,
+              userEmail: user.email ?? '',
+            );
+          case ProfileCompletionStatus.complete:
+            // This shouldn't happen since _isLoggedIn should be true
+            return const BottomNavigation();
+        }
+      }
     }
+
+    // Default to auth screen
+    return const AuthScreen();
   }
 }
 

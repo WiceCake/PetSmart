@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
+import 'package:pet_smart/components/enhanced_dialogs.dart';
 
 class PetDetailsPage extends StatefulWidget {
   final Map<String, dynamic> pet;
@@ -61,7 +63,7 @@ class _PetDetailsPageState extends State<PetDetailsPage> {
 
     try {
       final supabase = Supabase.instance.client;
-      
+
       await supabase.from('pets').update({
         'name': _nameController.text.trim(),
         'type': _selectedType,
@@ -70,12 +72,7 @@ class _PetDetailsPageState extends State<PetDetailsPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pet updated successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      EnhancedToasts.showPetUpdated(context, _nameController.text.trim());
 
       Navigator.pop(context, true);
     } catch (e) {
@@ -88,23 +85,9 @@ class _PetDetailsPageState extends State<PetDetailsPage> {
   }
 
   Future<void> _deletePet() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Pet'),
-        content: Text('Are you sure you want to delete ${widget.pet['name']}? This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await EnhancedDialogs.showPetDeletionConfirmation(
+      context,
+      widget.pet['name'] ?? 'this pet'
     );
 
     if (confirmed != true) return;
@@ -116,17 +99,12 @@ class _PetDetailsPageState extends State<PetDetailsPage> {
 
     try {
       final supabase = Supabase.instance.client;
-      
+
       await supabase.from('pets').delete().eq('id', widget.pet['id']);
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pet deleted successfully!'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      EnhancedToasts.showPetDeleted(context, widget.pet['name'] ?? 'Pet');
 
       Navigator.pop(context, true);
     } catch (e) {

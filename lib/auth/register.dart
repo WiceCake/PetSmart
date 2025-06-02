@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:pet_smart/auth/auth.dart';
 import 'package:pet_smart/auth/user_details.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/config/app_config.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
+
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -18,36 +21,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
+
   String? _error;
-
-  Future<bool> _checkEmailExists(String email) async {
-    try {
-      final supabase = Supabase.instance.client;
-
-      // Check if email exists in auth.users table by attempting to sign in with a dummy password
-      // This is a workaround since Supabase doesn't provide a direct way to check email existence
-      try {
-        await supabase.auth.signInWithPassword(email: email, password: 'dummy_password_check');
-        // If we reach here, the email exists but password is wrong
-        return true;
-      } catch (e) {
-        String errorMessage = e.toString().toLowerCase();
-        if (errorMessage.contains('invalid_credentials') || errorMessage.contains('invalid login credentials')) {
-          // Email exists but password is wrong
-          return true;
-        } else if (errorMessage.contains('email not confirmed') || errorMessage.contains('email_not_confirmed')) {
-          // Email exists but not confirmed
-          return true;
-        } else {
-          // Email doesn't exist or other error
-          return false;
-        }
-      }
-    } catch (e) {
-      // If there's any other error, assume email doesn't exist to allow registration attempt
-      return false;
-    }
-  }
 
   Future<void> _register() async {
     setState(() {
@@ -96,12 +71,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    // Check if email already exists
-    final emailExists = await _checkEmailExists(email);
-    if (emailExists) {
+    // Check if Supabase is properly configured
+    if (!AppConfig.isConfigured()) {
       setState(() {
         _isLoading = false;
-        _error = "An account with this email already exists. Please try logging in instead.";
+        _error = 'App configuration error. Please contact support.';
       });
       return;
     }
@@ -111,34 +85,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final response = await supabase.auth.signUp(email: email, password: password);
 
       // Debug information (remove in production)
-      // print('Registration response:');
-      // print('User: ${response.user?.id}');
-      // print('Session: ${response.session?.accessToken != null ? "Present" : "Null"}');
+      debugPrint('Registration response:');
+      debugPrint('User: ${response.user?.id}');
+      debugPrint('Session: ${response.session?.accessToken != null ? "Present" : "Null"}');
+      debugPrint('Email confirmed: ${response.user?.emailConfirmedAt}');
 
       if (response.user != null) {
-        // Registration successful - proceed regardless of email confirmation
+        // Registration successful - proceed to user details
         if (!mounted) return;
 
-        // Show success message and navigate
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              response.session != null
-                ? 'Registration successful!'
-                : 'Registration successful! Please verify your email when convenient.',
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
+        // Show success message
+        EnhancedToasts.showSuccess(
+          context,
+          'Registration successful! Welcome to PetSmart!',
+          duration: const Duration(seconds: 2),
         );
 
-        // Navigate to user details
+        // Navigate directly to user details screen
         Navigator.of(context).push(
           PageRouteBuilder(
             transitionDuration: const Duration(milliseconds: 400),
             pageBuilder: (context, animation, secondaryAnimation) => UserDetailsScreen(
               userId: response.user!.id,
-              userEmail: response.user!.email ?? email,
+              userEmail: email,
             ),
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return FadeTransition(
@@ -154,10 +123,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
         });
       }
     } catch (e) {
+      // Debug error information
+      debugPrint('Registration error: $e');
+      debugPrint('Error type: ${e.runtimeType}');
+
       setState(() {
         // Show a more user-friendly error if possible
         String errorMessage = e.toString().toLowerCase();
-        if (errorMessage.contains('email') && errorMessage.contains('already')) {
+        if (errorMessage.contains('user_already_exists') ||
+            errorMessage.contains('email_address_already_in_use') ||
+            (errorMessage.contains('email') && errorMessage.contains('already'))) {
           _error = "An account with this email already exists. Please try logging in instead.";
         } else if (errorMessage.contains('invalid_credentials')) {
           _error = "Invalid email or password format.";
@@ -167,6 +142,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
           _error = "Network error. Please check your connection and try again.";
         } else if (errorMessage.contains('anonymous_provider_disabled')) {
           _error = "Please enter a valid email and password.";
+        } else if (errorMessage.contains('signup_disabled')) {
+          _error = "Registration is currently disabled. Please contact support.";
         } else {
           _error = "Registration failed. Please try again.";
         }
@@ -176,6 +153,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _isLoading = false;
     });
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -390,6 +369,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                     ),
                   ),
+
                   const SizedBox(height: 24),
                   // Already have an account? Login
                   Row(

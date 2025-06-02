@@ -198,6 +198,7 @@ class CustomConfirmationPage extends StatelessWidget {
                           // Enhanced title with better typography
                           Text(
                             title,
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: primaryBlue,
                               fontWeight: FontWeight.bold,

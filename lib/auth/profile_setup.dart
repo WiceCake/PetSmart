@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:pet_smart/services/profile_completion_service.dart';
+import 'package:pet_smart/components/enhanced_dialogs.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
 import 'dart:typed_data';
 
 /// Screen for setting up user profile after registration
@@ -119,7 +122,68 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       return false;
     }
 
+    // Validate that profile picture is selected
+    if (_profileImageBytes == null && _profileImageUrl == null) {
+      setState(() {
+        _error = 'Please select a profile picture.';
+      });
+      return false;
+    }
+
     return true;
+  }
+
+  /// Handle cancellation of registration process
+  Future<void> _handleCancellation() async {
+    if (!mounted) return;
+
+    final confirmed = await EnhancedDialogs.showRegistrationCancellation(context);
+
+    if (confirmed == true && mounted) {
+      // Show loading dialog and get dismissal function
+      final dismissDialog = await EnhancedDialogs.showLoadingDialog(context, message: 'Cancelling registration...');
+
+      try {
+        // Delete the incomplete registration
+        final success = await ProfileCompletionService().deleteIncompleteRegistration();
+
+        if (mounted) {
+          // Dismiss loading dialog
+          dismissDialog();
+
+          if (success) {
+            // Show success toast
+            EnhancedToasts.showRegistrationCancelled(context);
+
+            // Small delay to let the toast show before navigation
+            await Future.delayed(const Duration(milliseconds: 500));
+
+            if (mounted) {
+              // Navigate back to auth wrapper - this will properly handle the auth state
+              Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+            }
+          } else {
+            // Show error toast
+            EnhancedToasts.showError(
+              context,
+              'Failed to cancel registration. Please try again.',
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Error during registration cancellation: $e');
+        if (mounted) {
+          // Dismiss loading dialog
+          dismissDialog();
+
+          // Show error toast
+          EnhancedToasts.showError(
+            context,
+            'An error occurred while cancelling registration. Please try again.',
+          );
+        }
+      }
+    }
   }
 
   /// Save profile data to database and navigate to main app
@@ -151,14 +215,17 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
 
     String? uploadedImageUrl = _profileImageUrl;
-    bool imageUploadFailed = false;
 
-    // Upload profile image if selected
+    // Upload profile image (required)
     if (_profileImageBytes != null) {
       uploadedImageUrl = await _uploadProfileImage(_profileImageBytes!, userId);
       if (uploadedImageUrl == null) {
-        imageUploadFailed = true;
-        // Don't return here - continue saving profile without image
+        // Profile picture upload failed - this is now an error since it's required
+        setState(() {
+          _isLoading = false;
+          _error = 'Failed to upload profile picture. Please check your internet connection and try again.';
+        });
+        return;
       }
     }
 
@@ -186,19 +253,19 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
     if (!mounted) return;
 
-    // Show success message with image upload status
-    if (imageUploadFailed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profile saved! Note: Profile picture upload failed - you can add it later.'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 4),
-        ),
-      );
-    }
+    // Show success toast
+    EnhancedToasts.showSuccess(
+      context,
+      'Profile setup completed successfully! Welcome to PetSmart!',
+    );
 
-    // Navigate back to root - AuthWrapper will handle the navigation
-    Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+    // Small delay to let the toast show before navigation
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (mounted) {
+      // Navigate back to root - AuthWrapper will handle the navigation
+      Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+    }
 
     setState(() {
       _isLoading = false;
@@ -207,7 +274,15 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop) {
+          // Show cancellation dialog when back navigation is attempted
+          await _handleCancellation();
+        }
+      },
+      child: Scaffold(
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -224,11 +299,21 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Custom App Bar
+              // Custom App Bar with Cancel Button
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
+                    const SizedBox(width: 48), // Spacer for centering
+                    const Text(
+                      'Profile Setup',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _primaryColor,
+                      ),
+                    ),
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -242,8 +327,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                         ],
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back, color: _primaryColor),
-                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close, color: Colors.red),
+                        onPressed: _handleCancellation,
+                        tooltip: 'Cancel Registration',
                       ),
                     ),
                   ],
@@ -339,10 +425,20 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  // Profile picture label
+                  Text(
+                    'Profile Picture *',
+                    style: TextStyle(
+                      color: _primaryColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 18),
                   _AnimatedInputField(
                     controller: _usernameController,
-                    hintText: 'Username',
+                    hintText: 'Username *',
                     icon: Icons.person,
                   ),
                   const SizedBox(height: 14),
@@ -465,6 +561,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

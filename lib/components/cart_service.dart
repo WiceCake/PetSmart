@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:pet_smart/utils/currency_formatter.dart';
 
@@ -64,11 +65,11 @@ class CartService {
           };
         }).toList();
       } catch (e) {
-        print('CartService: Database tables not found, using local storage: $e');
+        debugPrint('CartService: Database tables not found, using local storage: $e');
         // Keep existing local items if database is not available
       }
     } catch (e) {
-      print('CartService: Error initializing cart: $e');
+      debugPrint('CartService: Error initializing cart: $e');
     } finally {
       _isLoading = false;
     }
@@ -120,13 +121,13 @@ class CartService {
         await initializeCart();
         return true;
       } catch (e) {
-        print('CartService: Database operation failed, using local storage: $e');
+        debugPrint('CartService: Database operation failed, using local storage: $e');
         // Fallback to local storage
         _addItemLocally(product, quantity: quantity);
         return true;
       }
     } catch (e) {
-      print('CartService: Error adding item to cart: $e');
+      debugPrint('CartService: Error adding item to cart: $e');
       return false;
     }
   }
@@ -164,14 +165,14 @@ class CartService {
               .delete()
               .eq('id', item['cart_item_id']);
         } catch (e) {
-          print('CartService: Database delete failed, removing locally: $e');
+          debugPrint('CartService: Database delete failed, removing locally: $e');
         }
       }
 
       _items.removeAt(index);
       return true;
     } catch (e) {
-      print('CartService: Error removing item: $e');
+      debugPrint('CartService: Error removing item: $e');
       return false;
     }
   }
@@ -191,14 +192,14 @@ class CartService {
               .update({'quantity': quantity})
               .eq('id', item['cart_item_id']);
         } catch (e) {
-          print('CartService: Database update failed, updating locally: $e');
+          debugPrint('CartService: Database update failed, updating locally: $e');
         }
       }
 
       _items[index]['quantity'] = quantity;
       return true;
     } catch (e) {
-      print('CartService: Error updating quantity: $e');
+      debugPrint('CartService: Error updating quantity: $e');
       return false;
     }
   }
@@ -237,12 +238,12 @@ class CartService {
               .delete()
               .eq('user_id', user.id);
         } catch (e) {
-          print('CartService: Database clear failed: $e');
+          debugPrint('CartService: Database clear failed: $e');
         }
       }
       _items.clear();
     } catch (e) {
-      print('CartService: Error clearing cart: $e');
+      debugPrint('CartService: Error clearing cart: $e');
     }
   }
 

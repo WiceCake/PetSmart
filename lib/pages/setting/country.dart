@@ -9,7 +9,6 @@ class CountryPage extends StatefulWidget {
 
 class _CountryPageState extends State<CountryPage> {
   final Map<String, dynamic> _philippines = {'name': 'Philippines', 'code': 'PH', 'flag': '🇵🇭'};
-  final String _selectedCountryCode = 'PH';
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +44,7 @@ class _CountryPageState extends State<CountryPage> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
+                  color: Colors.black.withValues(alpha: 0.03),
                   blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),

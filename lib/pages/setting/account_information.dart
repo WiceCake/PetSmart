@@ -232,6 +232,7 @@ class _AccountInformationPageState extends State<AccountInformationPage> {
             ),
           ),
           const SizedBox(height: 24),
+
           Container(
             margin: const EdgeInsets.only(top: 16, bottom: 16),
             decoration: BoxDecoration(

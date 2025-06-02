@@ -92,7 +92,7 @@ class _PaymentPageState extends State<PaymentPage> {
         });
       }
     } catch (e) {
-      print('PaymentPage: Error loading addresses: $e');
+      debugPrint('PaymentPage: Error loading addresses: $e');
       if (mounted) {
         setState(() {
           _isLoadingAddresses = false;
@@ -377,7 +377,7 @@ class _PaymentPageState extends State<PaymentPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -495,7 +495,7 @@ class _PaymentPageState extends State<PaymentPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -561,7 +561,7 @@ class _PaymentPageState extends State<PaymentPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -626,7 +626,7 @@ class _PaymentPageState extends State<PaymentPage> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -4),
           ),
@@ -871,6 +871,10 @@ class _PaymentPageState extends State<PaymentPage> {
       _isProcessing = true;
     });
 
+    // Store context references before async operations
+    final navigator = Navigator.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     try {
       // Calculate total amount
       final subtotal = _calculateSubtotal();
@@ -894,41 +898,37 @@ class _PaymentPageState extends State<PaymentPage> {
         }
 
         // Navigate to the confirmation page
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => CustomConfirmationPage(
-                title: "Payment Completed",
-                message: "Your order has been placed successfully. Order ID: ${orderResult['order_id']}",
-                buttonText: "Back to Home",
-                icon: Icons.check_circle,
-                iconColor: Colors.green,
-              ),
+        if (!mounted) return;
+        navigator.pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => CustomConfirmationPage(
+              title: "Order Placed Successfully!",
+              message: "Fantastic! Your order #${orderResult['order_id']} has been placed and is being prepared with care. Thank you for choosing PetSmart!",
+              buttonText: "Back to Home",
+              icon: Icons.check_circle,
+              iconColor: Colors.green,
             ),
-          );
-        }
+          ),
+        );
       } else {
         // Order creation failed
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to place order. Please try again.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      // Handle errors
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error placing order: ${e.toString()}'),
+        if (!mounted) return;
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Failed to place order. Please try again.'),
             backgroundColor: Colors.red,
           ),
         );
       }
+    } catch (e) {
+      // Handle errors
+      if (!mounted) return;
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text('Error placing order: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       // Reset loading state
       if (mounted) {

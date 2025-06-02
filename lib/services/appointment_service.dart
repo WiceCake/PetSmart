@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pet_smart/services/notification_helper.dart';
+import 'package:intl/intl.dart';
 
 class AppointmentService {
   static final AppointmentService _instance = AppointmentService._internal();
@@ -6,6 +10,164 @@ class AppointmentService {
   AppointmentService._internal();
 
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  // Stream controllers for real-time updates
+  final StreamController<List<Map<String, dynamic>>> _upcomingAppointmentsController =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
+  final StreamController<List<Map<String, dynamic>>> _pastAppointmentsController =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
+  final StreamController<List<Map<String, dynamic>>> _allAppointmentsController =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
+
+  // Subscriptions for cleanup
+  RealtimeChannel? _appointmentsSubscription;
+
+  /// Get upcoming appointments stream for real-time updates
+  Stream<List<Map<String, dynamic>>> get upcomingAppointmentsStream => _upcomingAppointmentsController.stream;
+
+  /// Get past appointments stream for real-time updates
+  Stream<List<Map<String, dynamic>>> get pastAppointmentsStream => _pastAppointmentsController.stream;
+
+  /// Get all appointments stream for real-time updates
+  Stream<List<Map<String, dynamic>>> get allAppointmentsStream => _allAppointmentsController.stream;
+
+  /// Initialize real-time subscriptions for appointments
+  Future<void> initializeRealtimeSubscriptions() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      debugPrint('AppointmentService: User not authenticated, skipping real-time initialization');
+      return;
+    }
+
+    debugPrint('AppointmentService: Initializing real-time subscriptions for user: ${user.id}');
+
+    try {
+      await _setupRealtimeSubscriptions();
+      debugPrint('AppointmentService: Real-time subscriptions initialized successfully');
+    } catch (e) {
+      debugPrint('AppointmentService: Error initializing real-time subscriptions: $e');
+    }
+  }
+
+  /// Setup real-time subscriptions for appointments
+  Future<void> _setupRealtimeSubscriptions() async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    // Unsubscribe from previous subscription
+    await _appointmentsSubscription?.unsubscribe();
+
+    // Subscribe to appointments changes for current user
+    _appointmentsSubscription = _supabase
+        .channel('appointments:$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'appointments',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) => _handleAppointmentChange(payload),
+        )
+        .subscribe();
+
+    debugPrint('AppointmentService: Subscribed to appointments changes for user $userId');
+  }
+
+  /// Handle appointment changes from real-time subscription
+  void _handleAppointmentChange(PostgresChangePayload payload) {
+    debugPrint('AppointmentService: Appointment change detected: ${payload.eventType}');
+    debugPrint('AppointmentService: Payload details - oldRecord: ${payload.oldRecord}, newRecord: ${payload.newRecord}');
+
+    // Refresh all appointment-related data when any appointment changes
+    refreshAppointmentData();
+  }
+
+  /// Refresh all appointment-related data and emit to streams
+  Future<void> refreshAppointmentData() async {
+    debugPrint('AppointmentService: Refreshing appointment data due to real-time change');
+
+    try {
+      // Add a small delay to ensure database consistency
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Refresh upcoming, past, and all appointments in parallel
+      await Future.wait([
+        _loadAndEmitUpcomingAppointments(),
+        _loadAndEmitPastAppointments(),
+        _loadAndEmitAllAppointments(),
+      ]);
+
+      debugPrint('AppointmentService: Appointment data refreshed successfully');
+    } catch (e) {
+      debugPrint('AppointmentService: Error refreshing appointment data: $e');
+    }
+  }
+
+  /// Load upcoming appointments and emit to stream
+  Future<void> _loadAndEmitUpcomingAppointments() async {
+    try {
+      final appointments = await getUpcomingAppointments();
+      if (!_upcomingAppointmentsController.isClosed) {
+        _upcomingAppointmentsController.add(appointments);
+        debugPrint('AppointmentService: Emitted ${appointments.length} upcoming appointments to stream');
+      }
+    } catch (e) {
+      debugPrint('AppointmentService: Error loading upcoming appointments for stream: $e');
+      if (!_upcomingAppointmentsController.isClosed) {
+        _upcomingAppointmentsController.addError(e);
+      }
+    }
+  }
+
+  /// Load past appointments and emit to stream
+  Future<void> _loadAndEmitPastAppointments() async {
+    try {
+      final appointments = await getPastAppointments();
+      if (!_pastAppointmentsController.isClosed) {
+        _pastAppointmentsController.add(appointments);
+        debugPrint('AppointmentService: Emitted ${appointments.length} past appointments to stream');
+      }
+    } catch (e) {
+      debugPrint('AppointmentService: Error loading past appointments for stream: $e');
+      if (!_pastAppointmentsController.isClosed) {
+        _pastAppointmentsController.addError(e);
+      }
+    }
+  }
+
+  /// Load all appointments and emit to stream
+  Future<void> _loadAndEmitAllAppointments() async {
+    try {
+      final appointments = await getUserAppointments();
+      if (!_allAppointmentsController.isClosed) {
+        _allAppointmentsController.add(appointments);
+        debugPrint('AppointmentService: Emitted ${appointments.length} total appointments to stream');
+      }
+    } catch (e) {
+      debugPrint('AppointmentService: Error loading all appointments for stream: $e');
+      if (!_allAppointmentsController.isClosed) {
+        _allAppointmentsController.addError(e);
+      }
+    }
+  }
+
+  /// Dispose of resources and subscriptions
+  Future<void> dispose() async {
+    debugPrint('AppointmentService: Disposing resources...');
+
+    // Unsubscribe from real-time subscriptions
+    await _appointmentsSubscription?.unsubscribe();
+
+    // Close stream controllers
+    await _upcomingAppointmentsController.close();
+    await _pastAppointmentsController.close();
+    await _allAppointmentsController.close();
+
+    debugPrint('AppointmentService: Disposed successfully');
+  }
 
   /// Create a new appointment
   Future<Map<String, dynamic>?> createAppointment({
@@ -35,7 +197,8 @@ class AppointmentService {
         appointmentData['day_slot_id'] = daySlotId;
       }
 
-      print('Creating appointment with data: $appointmentData');
+      // Log appointment creation in production-ready way
+      debugPrint('Creating appointment with data: $appointmentData');
 
       // Use a more robust insert approach
       final response = await _supabase
@@ -44,10 +207,35 @@ class AppointmentService {
           .select('*')
           .single();
 
-      print('Appointment created successfully: $response');
+      debugPrint('Appointment created successfully: $response');
+
+      // Send notification for appointment confirmation
+      try {
+        // Get pet name for notification
+        final pet = await _supabase
+            .from('pets')
+            .select('name')
+            .eq('id', petId)
+            .single();
+
+        final petName = pet['name'] ?? 'Your pet';
+        final formattedDate = DateFormat('MMM dd, yyyy').format(appointmentDate);
+        final formattedTime = appointmentTime;
+
+        await NotificationHelper.notifyAppointmentConfirmed(
+          appointmentId: response['id'],
+          petName: petName,
+          appointmentDate: formattedDate,
+          appointmentTime: formattedTime,
+        );
+      } catch (notificationError) {
+        debugPrint('Failed to send appointment notification: $notificationError');
+        // Don't fail the appointment creation if notification fails
+      }
+
       return response;
     } catch (e) {
-      print('Failed to create appointment: $e');
+      debugPrint('Failed to create appointment: $e');
       throw Exception('Failed to create appointment: $e');
     }
   }
@@ -224,9 +412,34 @@ class AppointmentService {
         throw Exception('Appointment not found or you do not have permission to cancel it');
       }
 
-      print('Appointment cancelled successfully: ${response.first['id']}');
+      debugPrint('Appointment cancelled successfully: ${response.first['id']}');
+
+      // Send notification for appointment cancellation
+      try {
+        final appointment = response.first;
+
+        // Get pet name for notification
+        final pet = await _supabase
+            .from('pets')
+            .select('name')
+            .eq('id', appointment['pet_id'])
+            .single();
+
+        final petName = pet['name'] ?? 'Your pet';
+        final appointmentDate = DateTime.parse(appointment['appointment_date']);
+        final formattedDate = DateFormat('MMM dd, yyyy').format(appointmentDate);
+
+        await NotificationHelper.notifyAppointmentCancelled(
+          appointmentId: appointmentId,
+          petName: petName,
+          appointmentDate: formattedDate,
+        );
+      } catch (notificationError) {
+        debugPrint('Failed to send cancellation notification: $notificationError');
+        // Don't fail the cancellation if notification fails
+      }
     } catch (e) {
-      print('Error cancelling appointment: $e');
+      debugPrint('Error cancelling appointment: $e');
       rethrow;
     }
   }

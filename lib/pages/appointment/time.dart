@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pet_smart/components/status_banner.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
 import 'package:pet_smart/services/day_slots_service.dart';
 import 'package:pet_smart/services/appointment_service.dart';
 
@@ -30,6 +31,7 @@ class _AppointmentTimePageState extends State<AppointmentTimePage> {
   List<DaySlotAvailability> _availableSlots = [];
   int? _selectedIndex;
   bool _isLoading = true;
+  bool _isCreatingAppointment = false; // Loading state for appointment creation
   String? _error;
   final DaySlotsService _daySlotsService = DaySlotsService();
   final AppointmentService _appointmentService = AppointmentService();
@@ -86,6 +88,78 @@ class _AppointmentTimePageState extends State<AppointmentTimePage> {
         _error = 'Failed to load available time slots. Please try again.';
         _isLoading = false;
       });
+    }
+  }
+
+  /// Confirm appointment with loading state management
+  Future<void> _confirmAppointment() async {
+    if (_selectedIndex == null || _selectedIndex! >= _availableSlots.length) {
+      return;
+    }
+
+    final selectedSlot = _availableSlots[_selectedIndex!];
+
+    // Check if the selected time slot is unavailable
+    if (_isTimeSlotUnavailable(selectedSlot)) {
+      EnhancedToasts.showError(
+        context,
+        'This time slot is no longer available for today. Please select a future time.',
+      );
+      return;
+    }
+
+    // Set loading state
+    setState(() {
+      _isCreatingAppointment = true;
+    });
+
+    try {
+      // Create appointment using the service
+      await _appointmentService.createAppointment(
+        petId: widget.selectedPetId ?? '',
+        appointmentDate: widget.selectedDate,
+        appointmentTime: selectedSlot.daySlot.startTime.toString().substring(11, 19), // Extract time part
+        daySlotId: selectedSlot.daySlot.id,
+        status: 'Pending',
+      );
+
+      // Show success toast
+      if (mounted) {
+        EnhancedToasts.showSuccess(
+          context,
+          'Great! Your appointment has been successfully booked. We can\'t wait to see you and your pet!',
+        );
+      }
+
+      // Navigate to confirmation page
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const CustomConfirmationPage(
+              title: "Appointment Confirmed!",
+              message: "Great! Your appointment has been successfully booked. We can't wait to see you and your pet!",
+              buttonText: "Back to Home",
+              icon: Icons.check_circle,
+              iconColor: Colors.green,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Reset loading state on error
+      if (mounted) {
+        setState(() {
+          _isCreatingAppointment = false;
+        });
+
+        // Show error toast with enhanced styling
+        EnhancedToasts.showError(
+          context,
+          'Failed to create appointment. Please try again.',
+          actionLabel: 'Retry',
+          onActionPressed: () => _confirmAppointment(),
+        );
+      }
     }
   }
 
@@ -340,70 +414,32 @@ class _AppointmentTimePageState extends State<AppointmentTimePage> {
                           width: double.infinity,
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryBlue,
+                              backgroundColor: _isCreatingAppointment
+                                  ? Colors.grey.shade400
+                                  : primaryBlue,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              elevation: 2,
+                              elevation: _isCreatingAppointment ? 0 : 2,
                             ),
-                            icon: const Icon(Icons.check_circle_outline),
-                            onPressed: () async {
-                              final selectedSlot = _availableSlots[_selectedIndex!];
-                              final scaffoldMessenger = ScaffoldMessenger.of(context);
-                              final navigator = Navigator.of(context);
-
-                              // Check if the selected time slot is unavailable
-                              if (_isTimeSlotUnavailable(selectedSlot)) {
-                                scaffoldMessenger.showSnackBar(
-                                  const SnackBar(
-                                    content: Text('This time slot is no longer available for today. Please select a future time.'),
-                                    backgroundColor: Colors.red,
-                                    duration: Duration(seconds: 4),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              try {
-                                // Create appointment using the new service
-                                await _appointmentService.createAppointment(
-                                  petId: widget.selectedPetId ?? '',
-                                  appointmentDate: widget.selectedDate,
-                                  appointmentTime: selectedSlot.daySlot.startTime.toString().substring(11, 19), // Extract time part
-                                  daySlotId: selectedSlot.daySlot.id,
-                                  status: 'Pending',
-                                );
-
-                                // Navigate to confirmation page
-                                if (mounted) {
-                                  navigator.pushReplacement(
-                                    MaterialPageRoute(
-                                      builder: (context) => const CustomConfirmationPage(
-                                        title: "Successfully",
-                                        message: "The shop has already received your schedule.",
-                                        buttonText: "Back to home page",
-                                        icon: Icons.check_circle,
-                                        iconColor: Colors.green,
-                                      ),
+                            icon: _isCreatingAppointment
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                     ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  scaffoldMessenger.showSnackBar(
-                                    SnackBar(
-                                      content: Text('Failed to create appointment: $e'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                            label: const Text(
-                              "Confirm Appointment",
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  )
+                                : const Icon(Icons.check_circle_outline),
+                            onPressed: _isCreatingAppointment ? null : () => _confirmAppointment(),
+                            label: Text(
+                              _isCreatingAppointment
+                                  ? "Creating appointment..."
+                                  : "Confirm Appointment",
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),

@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pet_smart/pages/shop/item_detail.dart';
 import 'package:pet_smart/services/product_service.dart';
+import 'package:pet_smart/utils/currency_formatter.dart';
 
 // Color constants matching app design patterns
 const Color primaryBlue = Color(0xFF233A63);   // Main primary color
@@ -27,6 +29,7 @@ class SearchResultsScreen extends StatefulWidget {
 class _SearchResultsScreenState extends State<SearchResultsScreen> {
   final ProductService _productService = ProductService();
   final TextEditingController _searchController = TextEditingController();
+  Timer? _debounceTimer;
 
   List<Map<String, dynamic>> _searchResults = [];
   List<Map<String, dynamic>> _filteredResults = [];
@@ -85,8 +88,30 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    // Cancel previous timer
+    _debounceTimer?.cancel();
+
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = List.from(widget.searchResults);
+        _filteredResults = List.from(_searchResults);
+        _isLoading = false;
+        _errorMessage = null;
+      });
+      _applyFiltersAndSort();
+      return;
+    }
+
+    // Debounce search API calls by 500ms
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
+      await _performSearch(query);
+    });
   }
 
   Future<void> _performSearch(String query) async {
@@ -189,125 +214,322 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       backgroundColor: backgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 1,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: primaryBlue),
-          onPressed: () => Navigator.pop(context),
+        elevation: 2,
+        shadowColor: Colors.black.withValues(alpha: 0.1),
+        leading: Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: primaryBlue,
+              size: 20,
+            ),
+            onPressed: () => Navigator.pop(context),
+            tooltip: 'Back',
+          ),
         ),
-        title: SizedBox(
-          height: 40,
+        title: Container(
+          height: 44,
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: primaryBlue.withValues(alpha: 0.2),
+              width: 1,
+            ),
+          ),
           child: TextField(
             controller: _searchController,
+            onChanged: _onSearchChanged,
             onSubmitted: _performSearch,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.black87,
+            ),
             decoration: InputDecoration(
               hintText: 'Search products...',
-              prefixIcon: const Icon(Icons.search, color: primaryBlue, size: 20),
+              hintStyle: TextStyle(
+                color: Colors.grey[500],
+                fontSize: 16,
+              ),
+              prefixIcon: Container(
+                padding: const EdgeInsets.all(10),
+                child: Icon(
+                  Icons.search_rounded,
+                  color: primaryBlue,
+                  size: 22,
+                ),
+              ),
               suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 20),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() {
-                          _searchResults = [];
-                        });
-                      },
+                  ? Container(
+                      padding: const EdgeInsets.all(4),
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.clear_rounded,
+                          color: Colors.grey[600],
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          _searchController.clear();
+                          _onSearchChanged('');
+                        },
+                        tooltip: 'Clear search',
+                      ),
                     )
-                  : null,
+                  : _isLoading
+                      ? Container(
+                          padding: const EdgeInsets.all(10),
+                          child: const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: primaryBlue,
+                            ),
+                          ),
+                        )
+                      : null,
               filled: true,
-              fillColor: backgroundColor,
+              fillColor: Colors.transparent,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(22),
                 borderSide: BorderSide.none,
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
             ),
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search, color: primaryBlue),
-            onPressed: () => _performSearch(_searchController.text),
-          ),
-        ],
+        titleSpacing: 8,
       ),
       body: Column(
         children: [
-          // Filter and Sort bar
+          // Enhanced Filter and Sort bar
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
             child: Row(
               children: [
-                // Filter Button
+                // Filter Button with enhanced styling
                 Expanded(
                   flex: 1,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      _showFilterDialog(context);
-                    },
-                    icon: Stack(
-                      children: [
-                        const Icon(Icons.filter_list, size: 18),
-                        if (_hasActiveFilters)
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: primaryRed,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                      ],
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _hasActiveFilters ? primaryRed : primaryBlue.withValues(alpha: 0.3),
+                        width: 1.5,
+                      ),
+                      color: _hasActiveFilters
+                          ? primaryRed.withValues(alpha: 0.1)
+                          : primaryBlue.withValues(alpha: 0.05),
                     ),
-                    label: Text(_hasActiveFilters ? 'Filter (${_getActiveFilterCount()})' : 'Filter'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _hasActiveFilters ? primaryRed : primaryBlue,
-                      side: BorderSide(color: _hasActiveFilters ? primaryRed : primaryBlue),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _showFilterDialog(context),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Stack(
+                                children: [
+                                  Icon(
+                                    Icons.tune_rounded,
+                                    size: 20,
+                                    color: _hasActiveFilters ? primaryRed : primaryBlue,
+                                  ),
+                                  if (_hasActiveFilters)
+                                    Positioned(
+                                      right: 0,
+                                      top: 0,
+                                      child: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          color: primaryRed,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  _hasActiveFilters
+                                      ? 'Filter (${_getActiveFilterCount()})'
+                                      : 'Filter',
+                                  style: TextStyle(
+                                    color: _hasActiveFilters ? primaryRed : primaryBlue,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Sort Button
+                // Sort Button with enhanced styling
                 Expanded(
                   flex: 1,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      _showSortOptions(context);
-                    },
-                    icon: const Icon(Icons.sort, size: 18),
-                    label: Text(
-                      _shortSortLabel,
-                      overflow: TextOverflow.ellipsis,
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: primaryBlue.withValues(alpha: 0.3),
+                        width: 1.5,
+                      ),
+                      color: primaryBlue.withValues(alpha: 0.05),
                     ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: primaryBlue,
-                      side: BorderSide(color: primaryBlue),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _showSortOptions(context),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.sort_rounded,
+                                size: 20,
+                                color: primaryBlue,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  _shortSortLabel,
+                                  style: const TextStyle(
+                                    color: primaryBlue,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          // Results count and status
+          // Enhanced Results count and status
           Container(
-            padding: const EdgeInsets.all(16),
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _isLoading
-                  ? 'Searching...'
-                  : _errorMessage != null
-                      ? _errorMessage!
-                      : '${_filteredResults.length} Results Found',
-              style: TextStyle(
-                color: _errorMessage != null ? Colors.red[600] : Colors.grey[600],
-                fontSize: 14,
-              ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                if (_isLoading) ...[
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Searching...',
+                    style: TextStyle(
+                      color: primaryBlue,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ] else if (_errorMessage != null) ...[
+                  Icon(
+                    Icons.error_outline,
+                    color: Colors.red[600],
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: TextStyle(
+                        color: Colors.red[600],
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  Icon(
+                    Icons.search_rounded,
+                    color: Colors.grey[600],
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${_filteredResults.length} result${_filteredResults.length != 1 ? 's' : ''} found',
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (_searchResults.length != _filteredResults.length) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '(${_searchResults.length} total)',
+                      style: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+                const Spacer(),
+                if (!_isLoading && _filteredResults.isNotEmpty)
+                  Text(
+                    'for "${widget.searchQuery}"',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
             ),
           ),
           // Search results grid
@@ -320,34 +542,78 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   )
                 : _filteredResults.isEmpty
                     ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 64,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No products found',
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(24),
+                                decoration: BoxDecoration(
+                                  color: backgroundColor,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _searchResults.isEmpty
+                                      ? Icons.search_off_rounded
+                                      : Icons.filter_list_off_rounded,
+                                  size: 48,
+                                  color: Colors.grey[400],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _searchResults.isEmpty
-                                  ? 'Try searching with different keywords'
-                                  : 'Try adjusting your filters',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[500],
+                              const SizedBox(height: 24),
+                              Text(
+                                _searchResults.isEmpty
+                                    ? 'No products found'
+                                    : 'No results match your filters',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  color: Colors.grey[700],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                textAlign: TextAlign.center,
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 12),
+                              Text(
+                                _searchResults.isEmpty
+                                    ? 'Try searching with different keywords or check your spelling'
+                                    : 'Try adjusting your filters or search terms',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey[500],
+                                  height: 1.4,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              if (_hasActiveFilters) ...[
+                                const SizedBox(height: 24),
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      _minPrice = 0;
+                                      _maxPrice = 1000;
+                                      _minRating = 0;
+                                      _selectedCategory = 'All';
+                                    });
+                                    _applyFiltersAndSort();
+                                  },
+                                  icon: const Icon(Icons.clear_all_rounded),
+                                  label: const Text('Clear All Filters'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: primaryBlue,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
                       )
                     : GridView.builder(
@@ -502,8 +768,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     max: 1000,
                     divisions: 20,
                     labels: RangeLabels(
-                      '\$${_minPrice.round()}',
-                      '\$${_maxPrice.round()}',
+                      CurrencyFormatter.formatPeso(_minPrice.round()),
+                      CurrencyFormatter.formatPeso(_maxPrice.round()),
                     ),
                     onChanged: (values) {
                       setModalState(() {
@@ -514,7 +780,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     activeColor: primaryBlue,
                   ),
                   Text(
-                    '\$${_minPrice.round()} - \$${_maxPrice.round()}',
+                    '${CurrencyFormatter.formatPeso(_minPrice.round())} - ${CurrencyFormatter.formatPeso(_maxPrice.round())}',
                     style: TextStyle(color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 20),
@@ -691,7 +957,7 @@ class _SearchResultCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     // Price
                     Text(
-                      '\$${price.toStringAsFixed(2)}',
+                      CurrencyFormatter.formatPeso(price),
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,

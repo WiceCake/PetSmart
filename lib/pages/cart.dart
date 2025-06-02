@@ -83,6 +83,34 @@ class _CartPageState extends State<CartPage> {
     }
   }
 
+  void _showErrorMessage(String message) {
+    if (mounted) {
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _showSuccessMessage(String message) {
+    if (mounted) {
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -194,20 +222,19 @@ class _CartPageState extends State<CartPage> {
                           },
                           onQuantityChanged: (quantity) async {
                             final success = await _cartService.updateQuantity(index, quantity);
-                            if (success && mounted) {
+                            if (!mounted) return;
+
+                            if (success) {
                               setState(() {});
-                            } else if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Failed to update quantity'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
+                            } else {
+                              _showErrorMessage('Failed to update quantity');
                             }
                           },
                           onRemove: () async {
                             final success = await _cartService.removeItem(index);
-                            if (success && mounted) {
+                            if (!mounted) return;
+
+                            if (success) {
                               setState(() {
                                 selectedItems.remove(index);
                                 // Adjust selected indices after removal
@@ -222,19 +249,10 @@ class _CartPageState extends State<CartPage> {
                                 selectedItems = newSelectedItems;
                               });
 
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Item removed from cart'),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                            } else if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Failed to remove item'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
+                              final productName = item['name'] ?? item['title'] ?? 'Product';
+                              _showSuccessMessage('$productName removed from cart');
+                            } else {
+                              _showErrorMessage('Failed to remove item');
                             }
                           },
                         );
@@ -323,7 +341,7 @@ class _CartPageState extends State<CartPage> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -4),
           ),
@@ -414,7 +432,7 @@ class _CartItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Determine border color based on selection
-    final borderColor = isSelected ? primaryBlue.withOpacity(0.5) : Colors.grey[200]!;
+    final borderColor = isSelected ? primaryBlue.withValues(alpha: 0.5) : Colors.grey[200]!;
     final borderWidth = isSelected ? 1.5 : 1.0;
 
     return Container(
@@ -425,7 +443,7 @@ class _CartItemCard extends StatelessWidget {
         border: Border.all(color: borderColor, width: borderWidth),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04), // Softer shadow
+            color: Colors.black.withValues(alpha: 0.04), // Softer shadow
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),

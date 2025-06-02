@@ -5,7 +5,7 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>Pet Smart</string>
+		<string>PetSmart</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
-		<string>pet_smart</string>
+		<string>PetSmart</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -47,5 +47,22 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+
+		<!-- Push Notification Configuration -->
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>remote-notification</string>
+			<string>background-fetch</string>
+		</array>
+
+		<!-- Notification Sound -->
+		<key>UILocalNotificationDefaultSoundName</key>
+		<string>default</string>
+
+		<!-- Camera and Photo Library Permissions -->
+		<key>NSCameraUsageDescription</key>
+		<string>This app needs access to camera to take profile pictures.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>This app needs access to photo library to select profile pictures.</string>
 	</dict>
 </plist>

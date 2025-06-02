@@ -46,8 +46,13 @@ app.*.map.json
 
 # Environment variables
 .env
+.env.local
+.env.*.local
+
+# Google Services configuration (contains sensitive data)
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
 
 # Local configuration files (contains sensitive data)
 lib/config/local_config.dart
-local_config.dart
 *.local.dart

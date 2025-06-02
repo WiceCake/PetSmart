@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AddressService {
@@ -27,7 +28,7 @@ class AddressService {
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
-      print('AddressService: Error fetching addresses: $e');
+      debugPrint('AddressService: Error fetching addresses: $e');
       return [];
     }
   }
@@ -84,7 +85,7 @@ class AddressService {
 
       return response;
     } catch (e) {
-      print('AddressService: Error adding address: $e');
+      debugPrint('AddressService: Error adding address: $e');
       return null;
     }
   }
@@ -144,7 +145,7 @@ class AddressService {
 
       return response;
     } catch (e) {
-      print('AddressService: Error updating address: $e');
+      debugPrint('AddressService: Error updating address: $e');
       return null;
     }
   }
@@ -165,7 +166,7 @@ class AddressService {
 
       return true;
     } catch (e) {
-      print('AddressService: Error deleting address: $e');
+      debugPrint('AddressService: Error deleting address: $e');
       return false;
     }
   }
@@ -193,7 +194,7 @@ class AddressService {
 
       return true;
     } catch (e) {
-      print('AddressService: Error setting default address: $e');
+      debugPrint('AddressService: Error setting default address: $e');
       return false;
     }
   }
@@ -215,7 +216,7 @@ class AddressService {
 
       return response;
     } catch (e) {
-      print('AddressService: Error fetching default address: $e');
+      debugPrint('AddressService: Error fetching default address: $e');
       return null;
     }
   }
@@ -237,7 +238,7 @@ class AddressService {
 
       return response;
     } catch (e) {
-      print('AddressService: Error fetching address: $e');
+      debugPrint('AddressService: Error fetching address: $e');
       return null;
     }
   }
@@ -273,23 +274,5 @@ class AddressService {
     return address['full_address']?.toString() ?? '';
   }
 
-  /// Validate phone number format (flexible validation)
-  bool _isValidPhoneNumber(String phoneNumber) {
-    // Remove all non-digit characters
-    final digitsOnly = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
 
-    // More flexible phone number validation
-    // Accept any phone number with 7-15 digits (international standard)
-    if (digitsOnly.length >= 7 && digitsOnly.length <= 15) {
-      return true;
-    }
-
-    // Also accept if the original string contains common phone patterns
-    final phonePattern = RegExp(r'^[\+]?[\d\s\-\(\)]{7,20}$');
-    if (phonePattern.hasMatch(phoneNumber.trim())) {
-      return true;
-    }
-
-    return false;
-  }
 }

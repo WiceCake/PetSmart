@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:pet_smart/auth/auth.dart';
 import 'package:pet_smart/auth/profile_setup.dart';
+import 'package:pet_smart/services/profile_completion_service.dart';
+import 'package:pet_smart/components/enhanced_dialogs.dart';
+import 'package:pet_smart/components/enhanced_toasts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 class UserDetailsScreen extends StatefulWidget {
   final String? userId;
@@ -44,6 +47,10 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
       });
     }
   }
+
+
+
+
 
   Future<void> _selectBirthdate() async {
     final DateTime? picked = await showDatePicker(
@@ -203,12 +210,73 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
     }
   }
 
+  /// Handle cancellation of registration process
+  Future<void> _handleCancellation() async {
+    if (!mounted) return;
+
+    final confirmed = await EnhancedDialogs.showRegistrationCancellation(context);
+
+    if (confirmed == true && mounted) {
+      // Show loading dialog and get dismissal function
+      final dismissDialog = await EnhancedDialogs.showLoadingDialog(context, message: 'Cancelling registration...');
+
+      try {
+        // Delete the incomplete registration
+        final success = await ProfileCompletionService().deleteIncompleteRegistration();
+
+        if (mounted) {
+          // Dismiss loading dialog
+          dismissDialog();
+
+          if (success) {
+            // Show success toast
+            EnhancedToasts.showRegistrationCancelled(context);
+
+            // Small delay to let the toast show before navigation
+            await Future.delayed(const Duration(milliseconds: 500));
+
+            if (mounted) {
+              // Navigate back to auth wrapper - this will properly handle the auth state
+              Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+            }
+          } else {
+            // Show error toast
+            EnhancedToasts.showError(
+              context,
+              'Failed to cancel registration. Please try again.',
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Error during registration cancellation: $e');
+        if (mounted) {
+          // Dismiss loading dialog
+          dismissDialog();
+
+          // Show error toast
+          EnhancedToasts.showError(
+            context,
+            'An error occurred while cancelling registration. Please try again.',
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const primaryColor = Color(0xFF233A63);
     const accentColor = Color(0xFFE57373);
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop) {
+          // Show cancellation dialog when back navigation is attempted
+          await _handleCancellation();
+        }
+      },
+      child: Scaffold(
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -225,11 +293,21 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Custom App Bar
+              // Custom App Bar with Cancel Button
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
+                    const SizedBox(width: 48), // Spacer for centering
+                    const Text(
+                      'User Details',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: primaryColor,
+                      ),
+                    ),
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -243,8 +321,9 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                         ],
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back, color: primaryColor),
-                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close, color: Colors.red),
+                        onPressed: _handleCancellation,
+                        tooltip: 'Cancel Registration',
                       ),
                     ),
                   ],
@@ -328,10 +407,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
                             const SizedBox(height: 8),
                             TextButton(
                               onPressed: () {
-                                Navigator.of(context).pushAndRemoveUntil(
-                                  MaterialPageRoute(builder: (context) => const AuthScreen()),
-                                  (route) => false,
-                                );
+                                Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
                               },
                               child: const Text(
                                 'Go back to Registration',
@@ -384,6 +460,7 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

@@ -4,8 +4,10 @@ import 'package:pet_smart/pages/account.dart';
 import 'package:pet_smart/pages/cart.dart';
 import 'package:pet_smart/pages/dashboard.dart';
 import 'package:pet_smart/pages/settings.dart';
-import 'package:pet_smart/pages/messages/direct_chat_admin.dart';
+import 'package:pet_smart/pages/messages/chat_history.dart';
 import 'package:pet_smart/components/cart_service.dart';
+import 'package:pet_smart/services/unread_message_service.dart';
+import 'package:badges/badges.dart' as badges;
 
 const Color primaryRed = Color(0xFFE57373);    // Light coral red
 const Color primaryBlue = Color(0xFF3F51B5);   // PetSmart blue
@@ -33,12 +35,16 @@ class BottomNavigation extends StatefulWidget {
 
 class _BottomNavigationState extends State<BottomNavigation> {
   int _selectedIndex = 0;
+  final UnreadMessageService _unreadMessageService = UnreadMessageService();
+  int _unreadMessageCount = 0;
 
   @override
   void initState() {
     super.initState();
     // Initialize cart service when navigation is created
     _initializeCartService();
+    // Initialize unread message service
+    _initializeUnreadMessages();
   }
 
   Future<void> _initializeCartService() async {
@@ -49,11 +55,27 @@ class _BottomNavigationState extends State<BottomNavigation> {
     }
   }
 
+  Future<void> _initializeUnreadMessages() async {
+    try {
+      await _unreadMessageService.initialize();
+      // Listen to unread message changes
+      _unreadMessageService.unreadCountStream.listen((count) {
+        if (mounted) {
+          setState(() {
+            _unreadMessageCount = count;
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('Failed to initialize unread message service: $e');
+    }
+  }
+
   // Update the widget options list
   final List<Widget> _widgetOptions = <Widget>[
     const DashboardScreen(),
     const SettingScreen(),
-    const DirectChatAdminPage(),
+    const ChatHistoryPage(),
     // Remove CartPage from here since we'll handle it differently
     const Center(child: Text('Cart', style: TextStyle(fontSize: 22))),
     const AccountScreen(),
@@ -71,6 +93,12 @@ class _BottomNavigationState extends State<BottomNavigation> {
         _selectedIndex = index;
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _unreadMessageService.dispose();
+    super.dispose();
   }
 
   @override
@@ -108,7 +136,23 @@ class _BottomNavigationState extends State<BottomNavigation> {
                 selectedColor: primaryBlue,
               ),
               SalomonBottomBarItem(
-                icon: const Icon(Icons.message_rounded),
+                icon: _unreadMessageCount > 0
+                    ? badges.Badge(
+                        badgeContent: Text(
+                          _unreadMessageCount > 99 ? '99+' : '$_unreadMessageCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        badgeStyle: badges.BadgeStyle(
+                          badgeColor: const Color(0xFFEF5350),
+                          padding: const EdgeInsets.all(4),
+                        ),
+                        child: const Icon(Icons.message_rounded),
+                      )
+                    : const Icon(Icons.message_rounded),
                 title: const Text("Messages"),
                 selectedColor: primaryBlue,
               ),

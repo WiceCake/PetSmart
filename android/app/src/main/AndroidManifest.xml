@@ -3,9 +3,17 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Network state permission to check connectivity -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Camera permission for profile picture -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Push Notification Permissions -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Android 13+ notification permission -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
-        android:label="pet_smart"
+        android:label="PetSmart"
         android:name="${applicationName}"
         android:icon="@mipmap/petsmart"
         android:usesCleartextTraffic="true"
@@ -28,7 +36,37 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- Deep Link Intent Filter for Push Notifications -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.example.pet_smart" />
+            </intent-filter>
         </activity>
+        <!-- Notification Channel Configuration -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="petsmart_notifications" />
+
+        <!-- Notification Icon -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/petsmart" />
+
+        <!-- Boot Receiver for Notifications -->
+        <receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:enabled="false"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
