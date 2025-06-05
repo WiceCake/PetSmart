@@ -168,18 +168,51 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
     final supabase = Supabase.instance.client;
 
     try {
+      debugPrint('UserDetails: Starting to save user details for userId: $userId');
+
       // Prepare phone number data - use null if empty
       final phoneNumber = phoneController.text.trim().isEmpty ? null : phoneController.text.trim();
 
-      await supabase.from('profiles').upsert({
+      final profileData = {
         'id': userId,
         'first_name': firstNameController.text.trim(),
         'last_name': lastNameController.text.trim(),
         'phone_number': phoneNumber,
         'mobile_number': phoneNumber, // Use same phone for both fields
         'birthdate': selectedBirthdate!.toIso8601String().split('T')[0], // Format as YYYY-MM-DD
-        'created_at': DateTime.now().toIso8601String(),
-      });
+        // Don't set created_at - let the database handle it with its default value
+      };
+
+      debugPrint('UserDetails: Profile data to save: $profileData');
+
+      // Check if user is authenticated
+      final currentUser = supabase.auth.currentUser;
+      debugPrint('UserDetails: Current user: ${currentUser?.id}');
+      debugPrint('UserDetails: User email confirmed: ${currentUser?.emailConfirmedAt}');
+
+      if (currentUser == null) {
+        throw Exception('User not authenticated. Please try logging in again.');
+      }
+
+      if (currentUser.id != userId) {
+        throw Exception('User ID mismatch. Expected: $userId, Got: ${currentUser.id}');
+      }
+
+      // Try to insert first, then update if it fails
+      try {
+        final result = await supabase.from('profiles').insert(profileData).select();
+        debugPrint('UserDetails: Insert result: $result');
+      } catch (insertError) {
+        debugPrint('UserDetails: Insert failed, trying update: $insertError');
+        // If insert fails, try update
+        final result = await supabase.from('profiles')
+            .update(profileData)
+            .eq('id', userId)
+            .select();
+        debugPrint('UserDetails: Update result: $result');
+      }
+
+      debugPrint('UserDetails: User details saved successfully');
 
       if (!mounted) return;
 
@@ -202,10 +235,13 @@ class _UserDetailsScreenState extends State<UserDetailsScreen> {
           },
         ),
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('UserDetails: Error saving user details: $e');
+      debugPrint('UserDetails: Stack trace: $stackTrace');
+
       setState(() {
         _isLoading = false;
-        _error = 'Failed to save details. Please try again.';
+        _error = 'Failed to save details. Please try again. Error: ${e.toString()}';
       });
     }
   }

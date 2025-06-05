@@ -230,6 +230,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
 
     try {
+      debugPrint('ProfileSetup: Starting profile setup for userId: $userId');
+
       // Use upsert to handle both insert and update cases
       final profileData = {
         'id': userId,
@@ -239,14 +241,18 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         'updated_at': DateTime.now().toIso8601String(),
       };
 
-      await supabase.from('profiles').upsert(profileData);
-      debugPrint('Profile saved successfully!');
+      debugPrint('ProfileSetup: Profile data to save: $profileData');
 
-    } catch (e) {
-      debugPrint('Profile save error: $e');
+      final result = await supabase.from('profiles').upsert(profileData).select();
+      debugPrint('ProfileSetup: Save result: $result');
+      debugPrint('ProfileSetup: Profile saved successfully!');
+
+    } catch (e, stackTrace) {
+      debugPrint('ProfileSetup: Profile save error: $e');
+      debugPrint('ProfileSetup: Stack trace: $stackTrace');
       setState(() {
         _isLoading = false;
-        _error = 'Failed to update profile. Please check your internet connection and try again.';
+        _error = 'Failed to update profile. Error: ${e.toString()}';
       });
       return;
     }

@@ -104,7 +104,7 @@ class _PaymentPageState extends State<PaymentPage> {
   @override
   Widget build(BuildContext context) {
     final subtotal = _calculateSubtotal();
-    final deliveryFee = 149.50; // Converted from $2.99 to ₱149.50
+    final deliveryFee = 80.00; // Converted from $2.99 to ₱149.50
     final tax = subtotal * 0.08; // 8% tax
     final total = subtotal + deliveryFee + tax;
 
@@ -876,11 +876,23 @@ class _PaymentPageState extends State<PaymentPage> {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     try {
+      // Validate that we have items to purchase
+      if (_itemsForPurchase.isEmpty) {
+        throw Exception('No items to purchase');
+      }
+
+      // Validate that we have a delivery address
+      if (_selectedAddress == null) {
+        throw Exception('Please select a delivery address');
+      }
+
       // Calculate total amount
       final subtotal = _calculateSubtotal();
       final deliveryFee = 149.50;
       final tax = subtotal * 0.08;
       final total = subtotal + deliveryFee + tax;
+
+      debugPrint('PaymentPage: Placing order with ${_itemsForPurchase.length} items, total: ₱${total.toStringAsFixed(2)}');
 
       // Create order in Supabase
       final orderResult = await _orderService.createOrder(
@@ -891,9 +903,11 @@ class _PaymentPageState extends State<PaymentPage> {
 
       if (orderResult != null) {
         // Order created successfully
+        debugPrint('PaymentPage: Order created successfully with ID: ${orderResult['order_id']}');
 
         // Only clear the cart if this wasn't a direct purchase
         if (widget.directPurchaseItem == null) {
+          debugPrint('PaymentPage: Clearing cart after successful order');
           await _cartService.clear();
         }
 
@@ -912,21 +926,35 @@ class _PaymentPageState extends State<PaymentPage> {
         );
       } else {
         // Order creation failed
+        debugPrint('PaymentPage: Order creation failed - orderResult is null');
         if (!mounted) return;
         scaffoldMessenger.showSnackBar(
           const SnackBar(
-            content: Text('Failed to place order. Please try again.'),
+            content: Text('Failed to place order. Please check your connection and try again.'),
             backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
           ),
         );
       }
     } catch (e) {
       // Handle errors
+      debugPrint('PaymentPage: Error placing order: $e');
       if (!mounted) return;
+
+      String errorMessage = 'Error placing order. Please try again.';
+      if (e.toString().contains('No items to purchase')) {
+        errorMessage = 'Your cart is empty. Please add items before checkout.';
+      } else if (e.toString().contains('delivery address')) {
+        errorMessage = 'Please select a delivery address before placing your order.';
+      } else if (e.toString().contains('network') || e.toString().contains('connection')) {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      }
+
       scaffoldMessenger.showSnackBar(
         SnackBar(
-          content: Text('Error placing order: ${e.toString()}'),
+          content: Text(errorMessage),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
         ),
       );
     } finally {

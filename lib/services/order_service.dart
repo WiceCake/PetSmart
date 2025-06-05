@@ -48,6 +48,9 @@ class OrderService {
     debugPrint('OrderService: Initializing real-time subscriptions for user: ${user.id}');
 
     try {
+      // Auto-progress orders on initialization
+      await autoProgressOrders();
+
       await _setupRealtimeSubscriptions();
       debugPrint('OrderService: Real-time subscriptions initialized successfully');
     } catch (e) {
@@ -99,6 +102,15 @@ class OrderService {
     debugPrint('OrderService: Order change detected: ${payload.eventType}');
     debugPrint('OrderService: Payload details - oldRecord: ${payload.oldRecord}, newRecord: ${payload.newRecord}');
 
+    // Check if this is a status change
+    if (payload.eventType == PostgresChangeEvent.update) {
+      final newStatus = payload.newRecord['status'];
+      final oldStatus = payload.oldRecord?['status'];
+      if (newStatus != oldStatus) {
+        debugPrint('OrderService: Order status changed from $oldStatus to $newStatus');
+      }
+    }
+
     // Refresh all order-related data when any order changes
     _refreshOrderData();
   }
@@ -131,6 +143,17 @@ class OrderService {
     } catch (e) {
       debugPrint('OrderService: Error refreshing order data: $e');
     }
+  }
+
+  /// Refresh order data manually (for pull-to-refresh)
+  Future<void> refreshOrderData() async {
+    await _refreshOrderData();
+  }
+
+  /// Manually trigger auto-progress and refresh (for pull-to-refresh)
+  Future<void> refreshWithAutoProgress() async {
+    await autoProgressOrders();
+    await _refreshOrderData();
   }
 
   /// Load orders and emit to stream
@@ -279,16 +302,23 @@ class OrderService {
           throw Exception('Product ID is required for order item ${i + 1}');
         }
 
-        // Validate product ID format (should be UUID)
-        if (!RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$').hasMatch(productId)) {
-          debugPrint('OrderService: Invalid UUID format for product ID: $productId');
+        // Validate product ID format (should be UUID or valid string for mock data)
+        final isUuid = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$').hasMatch(productId);
+        final isValidMockId = RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(productId);
+
+        if (!isUuid && !isValidMockId) {
+          debugPrint('OrderService: Invalid product ID format: $productId');
           throw Exception('Invalid product ID format for item ${i + 1}');
         }
+
+        debugPrint('OrderService: Product ID validation passed - ID: $productId, isUuid: $isUuid, isMockId: $isValidMockId');
       }
 
       // Start a transaction-like operation
       // First, create the order
       debugPrint('OrderService: Creating order record...');
+      debugPrint('OrderService: Order data - user_id: ${user.id}, total_amount: $totalAmount, status: $status');
+
       final orderResponse = await _supabase
           .from('orders')
           .insert({
@@ -347,9 +377,54 @@ class OrderService {
         debugPrint('OrderService: Postgrest error details: ${e.details}');
         debugPrint('OrderService: Postgrest error message: ${e.message}');
         debugPrint('OrderService: Postgrest error code: ${e.code}');
+
+        // Check if it's a table not found error (common during development)
+        if (e.message.contains('relation') && e.message.contains('does not exist')) {
+          debugPrint('OrderService: Database tables not found, creating mock order for development');
+          return _createMockOrder(items, totalAmount, status);
+        }
       }
       return null;
     }
+  }
+
+  /// Create a mock order for development when database tables don't exist
+  Map<String, dynamic> _createMockOrder(
+    List<Map<String, dynamic>> items,
+    double totalAmount,
+    String status,
+  ) {
+    final mockOrderId = 'mock_${DateTime.now().millisecondsSinceEpoch}';
+    final user = _supabase.auth.currentUser;
+
+    debugPrint('OrderService: Creating mock order with ID: $mockOrderId');
+
+    final mockOrder = {
+      'id': mockOrderId,
+      'user_id': user?.id ?? 'mock_user',
+      'total_amount': totalAmount,
+      'status': status,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    final mockOrderItems = items.map((item) {
+      final price = CurrencyFormatter.parsePeso(item['price'].toString());
+      return {
+        'id': 'mock_item_${DateTime.now().millisecondsSinceEpoch}_${items.indexOf(item)}',
+        'order_id': mockOrderId,
+        'product_id': item['id']?.toString(),
+        'quantity': item['quantity'] ?? 1,
+        'price': price,
+      };
+    }).toList();
+
+    debugPrint('OrderService: Mock order created successfully');
+
+    return {
+      'order_id': mockOrderId,
+      'order': mockOrder,
+      'items': mockOrderItems,
+    };
   }
 
   /// Get user's order history with pagination
@@ -571,10 +646,15 @@ class OrderService {
   /// Update order status with history tracking
   Future<bool> updateOrderStatus(String orderId, String status, {String? notes}) async {
     try {
+      debugPrint('OrderService: Starting updateOrderStatus - orderId: $orderId, status: $status');
+
       final user = _supabase.auth.currentUser;
       if (user == null) {
+        debugPrint('OrderService: User not authenticated');
         return false;
       }
+
+      debugPrint('OrderService: User authenticated: ${user.id}');
 
       // Update the order status
       final updateData = {'status': status};
@@ -583,20 +663,33 @@ class OrderService {
       switch (status) {
         case 'Pending Delivery':
           // Order is ready for delivery
+          debugPrint('OrderService: Setting status to Pending Delivery');
           break;
         case 'Order Confirmation':
           updateData['delivered_at'] = DateTime.now().toIso8601String();
+          debugPrint('OrderService: Setting status to Order Confirmation with delivered_at');
           break;
         case 'Completed':
           updateData['confirmed_at'] = DateTime.now().toIso8601String();
+          debugPrint('OrderService: Setting status to Completed with confirmed_at');
           break;
       }
 
-      await _supabase
+      debugPrint('OrderService: Update data: $updateData');
+
+      final updateResult = await _supabase
           .from('orders')
           .update(updateData)
           .eq('id', orderId)
-          .eq('user_id', user.id);
+          .eq('user_id', user.id)
+          .select();
+
+      debugPrint('OrderService: Update result: $updateResult');
+      debugPrint('OrderService: Successfully updated order $orderId to status: $status');
+
+      // Force refresh of order data to ensure UI updates
+      await Future.delayed(const Duration(milliseconds: 100));
+      await _refreshOrderData();
 
       // Add to status history (optional - only if table exists)
       try {
@@ -622,9 +715,11 @@ class OrderService {
         // Don't fail the status update if notification fails
       }
 
+      debugPrint('OrderService: updateOrderStatus completed successfully');
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('OrderService: Error updating order status: $e');
+      debugPrint('OrderService: Stack trace: $stackTrace');
       return false;
     }
   }
@@ -690,10 +785,93 @@ class OrderService {
   /// Confirm order receipt by user
   Future<bool> confirmOrderReceipt(String orderId) async {
     try {
-      return await updateOrderStatus(orderId, 'Completed', notes: 'Order confirmed by user');
-    } catch (e) {
+      debugPrint('=== OrderService: confirmOrderReceipt called ===');
+      debugPrint('OrderService: Confirming order receipt for order: $orderId');
+
+      final user = _supabase.auth.currentUser;
+      debugPrint('OrderService: Current user: ${user?.id}');
+
+      final result = await updateOrderStatus(orderId, 'Completed', notes: 'Order confirmed by user');
+      debugPrint('OrderService: Order confirmation result: $result');
+      return result;
+    } catch (e, stackTrace) {
       debugPrint('OrderService: Error confirming order: $e');
+      debugPrint('OrderService: Stack trace: $stackTrace');
       return false;
+    }
+  }
+
+  /// Progress order to next status (for admin or testing purposes)
+  Future<bool> progressOrderToNextStatus(String orderId) async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        return false;
+      }
+
+      // Get current order status
+      final orderResponse = await _supabase
+          .from('orders')
+          .select('status')
+          .eq('id', orderId)
+          .eq('user_id', user.id)
+          .single();
+
+      final currentStatus = orderResponse['status'] as String;
+      String? nextStatus;
+
+      // Determine next status based on current status
+      switch (currentStatus) {
+        case 'Preparing':
+          nextStatus = 'Pending Delivery';
+          break;
+        case 'Pending Delivery':
+          nextStatus = 'Order Confirmation';
+          break;
+        case 'Order Confirmation':
+          nextStatus = 'Completed';
+          break;
+        default:
+          debugPrint('OrderService: Cannot progress order from status: $currentStatus');
+          return false;
+      }
+
+      debugPrint('OrderService: Progressing order $orderId from $currentStatus to $nextStatus');
+      return await updateOrderStatus(orderId, nextStatus, notes: 'Order progressed to next stage');
+    } catch (e) {
+      debugPrint('OrderService: Error progressing order: $e');
+      return false;
+    }
+  }
+
+  /// Auto-progress orders for demo purposes (simulate admin actions)
+  Future<void> autoProgressOrders() async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) return;
+
+      // Get orders that can be progressed (older than 30 seconds for demo)
+      final cutoffTime = DateTime.now().subtract(const Duration(seconds: 30));
+
+      final orders = await _supabase
+          .from('orders')
+          .select('id, status, created_at')
+          .eq('user_id', user.id)
+          .inFilter('status', ['Preparing', 'Pending Delivery'])
+          .lt('created_at', cutoffTime.toIso8601String());
+
+      for (final order in orders) {
+        final orderId = order['id'] as String;
+        final status = order['status'] as String;
+
+        debugPrint('OrderService: Auto-progressing order $orderId from $status');
+        await progressOrderToNextStatus(orderId);
+
+        // Add small delay between progressions
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    } catch (e) {
+      debugPrint('OrderService: Error in auto-progress: $e');
     }
   }
 

@@ -77,9 +77,7 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
       _isInitialLoading = true;
     });
 
-    // Simulate loading delay for skeleton effect
-    await Future.delayed(const Duration(milliseconds: 300));
-
+    // Load data immediately without delay
     await _lazyLoadingService.loadInitial();
 
     if (mounted) {
@@ -92,6 +90,16 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
 
 
   Future<void> _refreshOrders() async {
+    // Trigger OrderService refresh to ensure real-time data sync
+    await _orderService.refreshOrderData();
+    // Then refresh the lazy loading service
+    await _lazyLoadingService.refresh();
+  }
+
+  /// Handle pull-to-refresh with auto-progress
+  Future<void> _handlePullToRefresh() async {
+    // Trigger auto-progress and refresh when user explicitly pulls to refresh
+    await _orderService.refreshWithAutoProgress();
     await _lazyLoadingService.refresh();
   }
 
@@ -114,42 +122,45 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
       );
     }
 
-    // Use lazy loading for orders
-    return LazyLoadingListView<Map<String, dynamic>>(
-      service: _lazyLoadingService,
-      padding: const EdgeInsets.all(16),
-      itemBuilder: (context, order, index) {
-        return _buildOrderCard(order);
-      },
-      loadingWidget: SkeletonScreens.orderCardSkeleton(),
-      emptyWidget: _buildEmptyState(),
-      errorWidget: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Failed to load orders',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
+    // Use lazy loading for orders with custom refresh
+    return RefreshIndicator(
+      onRefresh: _handlePullToRefresh,
+      child: LazyLoadingListView<Map<String, dynamic>>(
+        service: _lazyLoadingService,
+        padding: const EdgeInsets.all(16),
+        itemBuilder: (context, order, index) {
+          return _buildOrderCard(order);
+        },
+        loadingWidget: SkeletonScreens.orderCardSkeleton(),
+        emptyWidget: _buildEmptyState(),
+        errorWidget: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.grey[400],
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Pull to refresh and try again',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
+              const SizedBox(height: 16),
+              Text(
+                'Failed to load orders',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                'Pull to refresh and try again',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -478,7 +489,16 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
 
     // Refresh orders if confirmation was successful
     if (result == true) {
-      _refreshOrders();
+      debugPrint('PurchaseHistory: Order confirmation successful, refreshing UI...');
+      // Force a complete refresh to ensure UI updates
+      await _refreshOrders();
+      debugPrint('PurchaseHistory: Main refresh completed');
+      // Also refresh the filter to ensure the order appears in the correct status
+      if (_selectedFilter != 'All') {
+        debugPrint('PurchaseHistory: Refreshing with filter: $_selectedFilter');
+        await _refreshWithNewFilter();
+      }
+      debugPrint('PurchaseHistory: All refreshes completed');
     }
   }
 }
@@ -504,6 +524,10 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
     final totalAmount = (widget.order['total_amount'] as num).toDouble();
     final status = widget.order['status'] as String;
     final statusInfo = OrderService.getOrderStatusInfo(status);
+
+    debugPrint('OrderDetailsSheet: Order status: $status');
+    debugPrint('OrderDetailsSheet: Status info: $statusInfo');
+    debugPrint('OrderDetailsSheet: Show confirm button: ${statusInfo['showConfirmButton']}');
 
     return DraggableScrollableSheet(
       initialChildSize: 0.7,
@@ -613,7 +637,10 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: ElevatedButton(
-        onPressed: _isConfirming ? null : _confirmOrder,
+        onPressed: _isConfirming ? null : () {
+          debugPrint('PurchaseHistory: Confirm button pressed!');
+          _confirmOrder();
+        },
         style: ElevatedButton.styleFrom(
           backgroundColor: successGreen,
           foregroundColor: cardColor,
@@ -653,24 +680,37 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
   }
 
   Future<void> _confirmOrder() async {
+    debugPrint('=== PurchaseHistory: _confirmOrder method called ===');
+    debugPrint('PurchaseHistory: Starting order confirmation for order: ${widget.order['id']}');
+    debugPrint('PurchaseHistory: Current _isConfirming state: $_isConfirming');
+
     setState(() {
       _isConfirming = true;
     });
 
     try {
+      debugPrint('PurchaseHistory: Calling confirmOrderReceipt...');
       final success = await _orderService.confirmOrderReceipt(widget.order['id']);
+      debugPrint('PurchaseHistory: confirmOrderReceipt result: $success');
 
       if (success) {
+        debugPrint('PurchaseHistory: Order confirmation successful');
         if (mounted) {
-          Navigator.pop(context, true); // Return true to indicate refresh needed
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Order confirmed successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          // Add a small delay to ensure database update is processed
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (mounted) {
+            debugPrint('PurchaseHistory: Closing dialog and showing success message');
+            Navigator.pop(context, true); // Return true to indicate refresh needed
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Order confirmed successfully!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
         }
       } else {
+        debugPrint('PurchaseHistory: Order confirmation failed');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -680,7 +720,9 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
           );
         }
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('PurchaseHistory: Error during order confirmation: $e');
+      debugPrint('PurchaseHistory: Stack trace: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -697,6 +739,8 @@ class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
       }
     }
   }
+
+
 
   Widget _buildInfoSection(String title, List<Widget> children) {
     return Column(
